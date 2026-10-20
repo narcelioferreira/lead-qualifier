@@ -16,3 +16,9 @@
 - `pyproject.toml` (uv, Python 3.12 fixado em `.python-version`), estrutura de pastas, `Makefile`, ruff (com regras de segurança `S`), mypy strict, pytest com marcador `integration`, pre-commit, `.env.example`, `.gitignore`, README esqueleto.
 - **Segurança:** `make check` inclui `bandit` (análise estática), `detect-secrets` (com baseline) e `pip-audit` (CVEs nas dependências). `.env` fica fora do git.
 - **Teste:** `make check` verde. **Teste do gate:** código proposital com `subprocess(shell=True)` fez o `make check` falhar (exit 2), e após a remoção ele voltou a passar.
+
+## T04: CI no GitHub Actions (parcial)
+- `.github/workflows/ci.yml`: roda `uv sync --locked` e `make check` em push e PR.
+- **Segurança:** `permissions: contents: read` (menor privilégio), `persist-credentials: false`, timeout e cancelamento de execuções concorrentes.
+- **Teste local:** YAML válido e `actionlint` sem erros.
+- **Pendente:** criar o repositório no GitHub, fazer o push, confirmar o workflow verde e testar uma falha proposital.
