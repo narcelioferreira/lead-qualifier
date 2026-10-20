@@ -7,8 +7,9 @@ A arquitetura definitiva já foi aprovada e está em `lead-qualifier/docs/00-arq
 1. **Implementar** o escopo da task.
 2. **Testar:** rodar o comando de teste indicado e também `make check` (ruff + mypy + pytest) a partir da T03.
 3. **Corrigir:** se algo falhar, corrigir e testar de novo até passar. Nunca seguir com teste vermelho.
-4. **Registrar:** atualizar `docs/CHANGELOG.md` (o que foi feito, decisões tomadas e problemas encontrados) e fazer um commit `feat(Txx): ...`.
-5. **Material LinkedIn:** quando indicado (📸), salvar print, diagrama ou número em `docs/linkedin/`.
+4. **Segurança:** revisar a superfície de risco da task (validação de entrada, segredos, dependências, permissões, dados pessoais e prompt injection) e implementar os controles necessários. Os controles automáticos (`detect-secrets`, `bandit`, `pip-audit`) rodam no `make check` a partir da T03.
+5. **Registrar:** atualizar `docs/CHANGELOG.md` (o que foi feito, decisões tomadas e problemas encontrados) e fazer um commit `feat(Txx): ...`.
+6. **Material LinkedIn:** quando indicado (📸), salvar print, diagrama ou número em `docs/linkedin/`.
 
 Regras gerais:
 - Testes unitários e de grafo **nunca** chamam APIs reais. Usam mocks ou fixtures, rodam no CI sem chaves e não custam nada.
