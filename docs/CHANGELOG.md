@@ -17,11 +17,13 @@
 - **Segurança:** `make check` inclui `bandit` (análise estática), `detect-secrets` (com baseline) e `pip-audit` (CVEs nas dependências). `.env` fica fora do git.
 - **Teste:** `make check` verde. **Teste do gate:** código proposital com `subprocess(shell=True)` fez o `make check` falhar (exit 2), e após a remoção ele voltou a passar.
 
-## T04: CI no GitHub Actions (parcial)
+## T04: CI no GitHub Actions
 - `.github/workflows/ci.yml`: roda `uv sync --locked` e `make check` em push e PR.
 - **Segurança:** `permissions: contents: read` (menor privilégio), `persist-credentials: false`, timeout e cancelamento de execuções concorrentes.
 - **Teste local:** YAML válido e `actionlint` sem erros.
-- **Pendente:** criar o repositório no GitHub, fazer o push, confirmar o workflow verde e testar uma falha proposital.
+- Repositório privado `narcelioferreira/lead-qualifier` criado e `main` enviado. O CI passou verde no `main`.
+- **Teste de falha:** numa branch temporária com um teste proposital `assert 1 == 2`, o CI falhou na etapa "Lint, tipos, testes e segurança", como esperado. A branch foi apagada em seguida.
+- **Correção durante a task:** o CI não disparava em push de branches fora do `main` (só em PR). Adicionei o gatilho manual `workflow_dispatch`, que permite rodar o CI em qualquer branch sem abrir um PR.
 
 ## T05: Config e contratos
 - `app/config.py` (pydantic-settings) e `app/schemas.py` (`LeadInput`, `QualificationResult`, `CriterionScore`, `Evidence`, `NextStep`, `Tier`). Documentado em `03-contratos.md`.
