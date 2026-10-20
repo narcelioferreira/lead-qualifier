@@ -55,3 +55,25 @@
   2. O `detect-secrets` apontou um falso positivo em `03-contratos.md` (nomes de variáveis), commitado na T05 porque o doc foi escrito depois do gate. Ele foi auditado e marcado no baseline.
   3. **Falha de processo:** o scan de segredos só olhava arquivos rastreados pelo git. Agora inclui arquivos novos, e foi testado com um token falso não rastreado, que passou a ser detectado.
   4. **Regra de processo adicionada:** documentação também entra antes do `make check` final da task.
+
+## T07: Score determinístico
+- `app/ontology/scoring.py`: a função `compute_score(LeadProfile) → ScoreResult` faz:
+  - derivação do BuyingRole;
+  - uso da intenção mais forte;
+  - score ponderado;
+  - tier por score;
+  - tetos C1–C3;
+  - regras eliminatórias K1–K7 (todas registradas, motivo pela precedência);
+  - flag de fronteira (±5);
+  - regra de revisão humana (2 ou mais critérios críticos incertos).
+- **Teste:** os 8 exemplos da T02 viraram testes e todos bateram com o cálculo manual. Também cobrem:
+  - cada regra eliminatória transforma um lead perfeito em D;
+  - precedência (a injeção vence);
+  - score exatamente em 75 e em 55;
+  - perfil todo `unknown`;
+  - incerteza por `low certainty`;
+  - intenção mais forte;
+  - determinismo (20 execuções idênticas).
+  - Resultado: 114 testes no total, com **100% de cobertura** em `scoring.py`.
+- **Segurança:** a pontuação não depende de texto livre. O LLM só influencia o resultado por valores enumerados e validados da ontologia, então uma injeção não consegue "pedir" um score. No pior caso, ela distorce um valor extraído, e esse risco é mitigado pelo guardrail (T28) e pela regra K1.
+- **Correções durante a task:** removido um teste-sentinela sem valor e um comentário confuso; ajustado o teste de determinismo (o `ScoreResult` contém listas e não é hashable).
