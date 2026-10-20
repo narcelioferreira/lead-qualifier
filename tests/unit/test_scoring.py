@@ -291,3 +291,20 @@ def test_small_company_with_owner_and_pain_is_capped_at_b() -> None:
     assert result.tier_by_score is Tier.A
     assert result.tier is Tier.B
     assert result.caps_applied == ("C4",)
+
+
+def test_director_without_area_is_decision_maker() -> None:
+    # "Diretor" de transportadora pedindo proposta para 60 caminhões (caso L017).
+    # Antes da regra `unspecified`, caía em `other` → sem papel → teto C3.
+    profile = LeadProfile(
+        sector=SectorFit.TARGET,
+        size=SizeBand.S_50_199,
+        region=RegionFit.PRIORITY,
+        area=Area.UNSPECIFIED,
+        seniority=Seniority.DIRECTOR,
+        intents=frozenset({I.PRICING_REQUEST}),
+    )
+    result = compute_score(profile)
+    assert result.buying_role is BuyingRole.DECISION_MAKER
+    assert result.tier is Tier.A
+    assert result.caps_applied == ()

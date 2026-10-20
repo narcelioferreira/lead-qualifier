@@ -47,6 +47,8 @@ class Area(StrEnum):
     HR = "hr"
     LEGAL = "legal"
     OTHER = "other"
+    # Cargo sem área explícita ("Diretor", "Sócio", "Diretor-geral"): conta como executivo.
+    UNSPECIFIED = "unspecified"
 
 
 class Seniority(StrEnum):

@@ -21,7 +21,7 @@ Lead ──hasCompany──► Company ──inSector──► SectorFit      {t
   │                    └──isA─────────► CompanyKind      {prospect, competitor, vendor, unknown}
   ├──hasContact──► Contact ──hasRole──► Role
   │                                      ├── Area        {operations, logistics, fleet, finance, executive, it,
-  │                                      │                procurement, sales, marketing, hr, legal, other}
+  │                                      │                procurement, sales, marketing, hr, legal, other, unspecified}
   │                                      ├── Seniority   {c_level, owner, director, manager, coordinator,
   │                                      │                analyst, intern, unknown}
   │                                      └── BuyingRole  {decision_maker, influencer, user, none, unknown}  ← derivado
@@ -46,7 +46,7 @@ Lead ──hasCompany──► Company ──inSector──► SectorFit      {t
 | | `none` | Mensagem vazia ou sem intenção |
 
 ### 2.2 Derivação de `BuyingRole` (tabela, sem LLM)
-| Seniority \ Area | operations, logistics, fleet | finance, executive | it, procurement | sales, marketing, hr, legal, other |
+| Seniority \ Area | operations, logistics, fleet | finance, executive, unspecified | it, procurement | sales, marketing, hr, legal, other |
 |---|---|---|---|---|
 | **c_level, owner** | decision_maker | decision_maker | influencer | none |
 | **director** | decision_maker | decision_maker | influencer | none |
@@ -56,7 +56,7 @@ Lead ──hasCompany──► Company ──inSector──► SectorFit      {t
 | **intern** | none | none | none | none |
 | **unknown** | unknown | unknown | unknown | none |
 
-Para **c_level/owner**, a área `executive` cobre CEO, sócio e fundador. A FrotaSense é uma compra operacional e financeira, então Comercial, Marketing, RH e Jurídico não têm papel na decisão.
+Para **c_level/owner**, a área `executive` cobre CEO, sócio e fundador. Um cargo **sem área explícita** ("Diretor", "Diretor-geral", "Sócio") recebe a área `unspecified`, que é tratada como executiva: diretor ou sócio sem área é **decisor**. Já cargos com área administrativa ("Gerente Administrativo") continuam como `other`. A FrotaSense é uma compra operacional e financeira, então Comercial, Marketing, RH e Jurídico não têm papel na decisão.
 
 ## 3. Rubrica de pontuação
 

@@ -136,3 +136,9 @@
 - **Correção:** a planilha passa a sair com BOM e `;`. O `import` detecta o separador sozinho (`;` ou `,`), então funciona com Excel, LibreOffice e Google Sheets.
 - **Teste:** novo teste confere o BOM e o `;` na saída e a importação nos dois separadores. São 165 testes, `make check` verde.
 - **Segurança:** a neutralização de CSV injection continua igual, já que o separador não muda o tratamento das células.
+
+## Ajuste T09: cargo de direção sem área
+- **Problema encontrado na rotulagem:** em "Diretor" sem área (L017, L021), a área caía em `other`, ou seja, sem papel na compra e teto C3. Assim, um diretor de transportadora pedindo proposta para 60 caminhões virava **C**. O erro estava na regra, e não no rótulo.
+- **Decisão do autor:** nova área `unspecified` (cargo sem área explícita), tratada como executiva na matriz de papéis. Diretor ou sócio sem área vira **decisor**, e gerente sem área vira influenciador. Cargos com área administrativa continuam como `other`.
+- **Teste:** casos novos na matriz Senioridade × Área e um teste de score para o caso L017 (tier A, sem tetos).
+- **Rotulagem:** os rótulos provisórios foram descartados, sem commit, até o autor revisar L017, L021 (nova regra) e L013 (caso de homônimo: `tombini.com.br` é fabricante de móveis).

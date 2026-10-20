@@ -2,7 +2,7 @@
 version: 1
 area_groups:
   ops: [operations, logistics, fleet]
-  fin_exec: [finance, executive]
+  fin_exec: [finance, executive, unspecified]  # unspecified: cargo sem área explícita
   support: [it, procurement]
   unrelated: [sales, marketing, hr, legal, other]
 matrix:

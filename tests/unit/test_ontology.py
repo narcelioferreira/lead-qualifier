@@ -107,6 +107,12 @@ def test_every_seniority_area_combination_has_a_buying_role() -> None:
         (Seniority.C_LEVEL, Area.MARKETING, BuyingRole.NONE),
         (Seniority.UNKNOWN, Area.OPERATIONS, BuyingRole.UNKNOWN),
         (Seniority.UNKNOWN, Area.SALES, BuyingRole.NONE),
+        # Cargo sem área explícita conta como executivo (decisão do autor na T09).
+        (Seniority.DIRECTOR, Area.UNSPECIFIED, BuyingRole.DECISION_MAKER),
+        (Seniority.OWNER, Area.UNSPECIFIED, BuyingRole.DECISION_MAKER),
+        (Seniority.MANAGER, Area.UNSPECIFIED, BuyingRole.INFLUENCER),
+        (Seniority.ANALYST, Area.UNSPECIFIED, BuyingRole.USER),
+        (Seniority.DIRECTOR, Area.OTHER, BuyingRole.NONE),
     ],
 )
 def test_buying_role_matrix_matches_spec(
