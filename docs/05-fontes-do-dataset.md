@@ -54,3 +54,22 @@ Os rótulos ficam separados em `evals/labels.jsonl` (T09), para que o agente nun
 
 ## Divisão
 20 leads de **dev** (para ajustar prompts) e 30 de **teste**, congelados e estratificados por tier esperado. A divisão é feita **antes** de rodar o agente.
+
+## Rotulagem humana (T09)
+Feita pelo autor (e, se possível, por um segundo anotador independente), usando só a rubrica de `02-ontologia-icp.md` (seção 5) e evidências públicas. O código apenas valida e consolida.
+
+```bash
+# 1. Planilha sem grupo-alvo nem tags (texto já sanitizado, igual ao que o agente recebe)
+uv run python scripts/inter_annotator.py sheet --out evals/annotations/planilha-ana.csv
+# 2. Preencher tier (A–D), uncertain (x/sim ou vazio) e rationale; depois importar
+uv run python scripts/inter_annotator.py import evals/annotations/planilha-ana.csv --annotator ana
+# 3. Com dois anotadores: kappa, matriz de confusão e divergências
+uv run python scripts/inter_annotator.py compare evals/annotations/ana.jsonl evals/annotations/bia.jsonl
+# 4. Discutir as divergências, registrar em resolucoes.jsonl ({"id", "tier", "rationale"}) e consolidar
+uv run python scripts/inter_annotator.py merge evals/annotations/ana.jsonl evals/annotations/bia.jsonl \
+    --resolutions evals/annotations/resolucoes.jsonl
+```
+- Cada anotador preenche sua planilha **sem ver** a do outro nem o `dataset.jsonl` (que tem o `expected_group`).
+- O relatório vai para `evals/reports/00-concordancia-humana.md`. A métrica principal é o **kappa ponderado linear**, porque os tiers são ordinais.
+- O `merge` nunca decide uma divergência sozinho: sem resolução registrada, ele falha. Com um único anotador, o rótulo dele vira o final (`resolution = single_annotator`) e o kappa humano não é calculado.
+- Os arquivos `annotations/<anotador>.jsonl`, as resoluções e o relatório são versionados. A planilha CSV é derivada e fica fora do git.

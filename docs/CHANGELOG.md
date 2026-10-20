@@ -96,3 +96,25 @@
   - teste de que a sanitização do `LeadInput` remove zero-width e override bidi de uma injeção real do dataset;
   - os metadados de avaliação não vazam para a entrada do agente.
 - **Lacuna registrada:** não há empresas comprovadamente pequenas (< 50 funcionários) com site verificável. O grupo C se apoia em papel sem decisão e intenção fraca. Ver `05-fontes-do-dataset.md`.
+
+## T09: Rotulagem humana (ferramentas; rotulagem pendente)
+- **Escopo desta entrega:** só a infraestrutura. Pela regra do projeto, quem rotula é o autor: o Claude não gerou nem alterou rótulos e não criou o `evals/labels.jsonl`.
+- `evals/labels.py`: contratos `AnnotatorLabel`, `Resolution` e `FinalLabel` (`extra="forbid"`), leitura de JSONL com o número da linha no erro, planilha de anotação e `merge_labels`.
+- `evals/agreement.py`: kappa de Cohen simples, ponderado linear e ponderado quadrático, matriz de confusão, leitura de Landis & Koch e relatório em Markdown com as divergências.
+- `scripts/inter_annotator.py` (lógica em `evals/inter_annotator.py`): subcomandos `sheet`, `import`, `compare` e `merge`. O passo a passo está em `05-fontes-do-dataset.md`.
+- **Decisões:**
+  - a planilha esconde `expected_group` e `tags`, para o grupo-alvo da montagem não enviesar o anotador;
+  - a planilha mostra o texto já sanitizado pelo `LeadInput`, o mesmo que o agente recebe;
+  - divergência sem resolução registrada faz o `merge` falhar, porque nada é decidido automaticamente;
+  - o kappa ponderado linear é a métrica principal, porque os tiers são ordinais.
+- **Teste:** `test_agreement.py` e `test_labels.py` (35 testes):
+  - kappa calculado à mão num caso 4×4 (simples 2/3, linear 7/9, quadrático 7/8), concordância perfeita, classe única, discordância sistemática (−1) e erro distante pesando mais que erro vizinho;
+  - merge com 1 e 2 anotadores, IDs faltando, duplicados, mesmo anotador nos dois arquivos e resoluções sobrando;
+  - CLI de ponta a ponta em diretório temporário.
+  - A conferência do kappa contra o `sklearn` fica para a T15, como previsto no plano.
+- **Segurança:**
+  - **CSV injection:** células que começam com `=`, `+`, `-` ou `@` são neutralizadas, porque o texto do lead é não confiável e a planilha abre no Excel;
+  - o nome do anotador vira nome de arquivo, então é validado por regex (teste com `../../etc`);
+  - a planilha preenchida é validada linha a linha (tier, `uncertain`, justificativa obrigatória).
+- **Problema corrigido:** o `pattern` do Pydantic procura o padrão em qualquer ponto da string, então o regex do anotador sem âncoras aceitava "Ana Silva". O teste pegou o bug, e o regex agora usa `^…$`.
+- **Pendente (autor):** preencher a planilha, importar, rodar o `compare` se houver segundo anotador e o `merge`, publicar o kappa humano e o material 📸 em `docs/linkedin/`.

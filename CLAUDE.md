@@ -45,7 +45,7 @@ Inclui: Python 3.12, uv, LangGraph, OpenAI API, Ollama (SLM), Postgres + pgvecto
 
 ## Status atual
 - ✅ T01–T08: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico e dataset de 50 leads (`evals/dataset.jsonl`). São 125 testes.
-- ⏭️ **Próxima: T09**, a rotulagem humana, feita pelo autor (não pelo Claude).
+- 🟡 **T09 em andamento:** as ferramentas de rotulagem e kappa estão prontas (`scripts/inter_annotator.py`, 160 testes). **Falta a rotulagem pelo autor** (passo a passo em `docs/05-fontes-do-dataset.md`). A T10 só começa depois do `labels.jsonl` final.
 - Antes da Fase C (T10), o autor precisa das chaves: OpenAI, Tavily e HubSpot (developer test account).
 
 ## Comandos
