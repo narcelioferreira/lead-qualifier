@@ -1,0 +1,50 @@
+{"id":"L001","tier":"D","uncertain":false,"rationale":"Fornecedor de software oferecendo ERP à FrotaSense.","resolution":"single_annotator"}
+{"id":"L002","tier":"B","uncertain":true,"rationale":"Distribuidora com frota e coordenador influenciador, mas porte e região não estão evidenciados.","resolution":"single_annotator"}
+{"id":"L003","tier":"B","uncertain":true,"rationale":"Transportadora com dor explícita de manutenção e coordenador influenciador; porte não informado.","resolution":"single_annotator"}
+{"id":"L004","tier":"B","uncertain":false,"rationale":"Transportadora com analista de logística usuário e pedido de proposta; empresa de grande porte limita o tier.","resolution":"single_annotator"}
+{"id":"L005","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa explícita de manipular a classificação.","resolution":"single_annotator"}
+{"id":"L006","tier":"B","uncertain":false,"rationale":"Transportadora com coordenador de operações influenciador e empresa de porte enterprise.","resolution":"single_annotator"}
+{"id":"L007","tier":"C","uncertain":false,"rationale":"Cargo de RH não tem papel na compra da solução de frota.","resolution":"single_annotator"}
+{"id":"L008","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa explícita de manipular a classificação.","resolution":"single_annotator"}
+{"id":"L009","tier":"B","uncertain":false,"rationale":"Transportadora com gerente de frota e dor explícita, mas porte enterprise aplica teto B.","resolution":"single_annotator"}
+{"id":"L010","tier":"B","uncertain":false,"rationale":"Operador logístico com gerente de frota e pedido de proposta; porte enterprise aplica teto B.","resolution":"single_annotator"}
+{"id":"L011","tier":"A","uncertain":false,"rationale":"Transportadora com sócio-diretor, frota de cerca de 70 caminhões e dor de fornecedor.","resolution":"single_annotator"}
+{"id":"L012","tier":"A","uncertain":true,"rationale":"Transportadora com gerente de operações e dor urgente de jornada; porte não informado.","resolution":"single_annotator"}
+{"id":"L013","tier":"D","uncertain":false,"rationale":"Fabricante de mobiliário corporativo, fora do setor-alvo de transporte e distribuição.","resolution":"single_annotator"}
+{"id":"L014","tier":"B","uncertain":false,"rationale":"Distribuidora com diretor de logística e troca de rastreamento; porte enterprise aplica teto B.","resolution":"single_annotator"}
+{"id":"L015","tier":"D","uncertain":false,"rationale":"Empresa do setor financeiro, fora do setor-alvo de transporte e distribuição.","resolution":"single_annotator"}
+{"id":"L016","tier":"C","uncertain":true,"rationale":"Operador logístico com coordenador influenciador e interesse genérico; porte e região não informados.","resolution":"single_annotator"}
+{"id":"L017","tier":"A","uncertain":false,"rationale":"Transportadora com diretor tratado como decisor, 60 veículos e pedido explícito de proposta.","resolution":"single_annotator"}
+{"id":"L018","tier":"B","uncertain":false,"rationale":"Transportadora pequena com sócio-proprietário e dor explícita; porte de 1 a 49 aplica teto B.","resolution":"single_annotator"}
+{"id":"L019","tier":"C","uncertain":false,"rationale":"Cargo comercial sem papel na compra da solução de frota.","resolution":"single_annotator"}
+{"id":"L020","tier":"D","uncertain":false,"rationale":"Mensagem é spam promocional de SEO e não é uma demanda de compra da solução.","resolution":"single_annotator"}
+{"id":"L021","tier":"A","uncertain":false,"rationale":"Grupo com transportadora e operador logístico, diretor tratado como decisor e demanda explícita para múltiplas empresas.","resolution":"single_annotator"}
+{"id":"L022","tier":"D","uncertain":false,"rationale":"Lead é pessoa física autônoma buscando serviço para uso próprio.","resolution":"single_annotator"}
+{"id":"L023","tier":"B","uncertain":true,"rationale":"Operação de resíduos com gerente de operações e pedido de preço; porte não informado.","resolution":"single_annotator"}
+{"id":"L024","tier":"A","uncertain":false,"rationale":"Transportadora com diretor de operações, 85 caminhões e pedido de proposta.","resolution":"single_annotator"}
+{"id":"L025","tier":"C","uncertain":false,"rationale":"Cargo jurídico não tem papel na decisão de compra da solução de frota.","resolution":"single_annotator"}
+{"id":"L026","tier":"A","uncertain":false,"rationale":"Transportadora com fleet manager, 120 caminhões e troca de fornecedor de telemática.","resolution":"single_annotator"}
+{"id":"L027","tier":"D","uncertain":false,"rationale":"Lead explicitamente identificado como estudante realizando TCC.","resolution":"single_annotator"}
+{"id":"L028","tier":"D","uncertain":false,"rationale":"Empresa e operação estão na Argentina, fora da região atendida pela rubrica.","resolution":"single_annotator"}
+{"id":"L029","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa de injeção e manipulação do sistema.","resolution":"single_annotator"}
+{"id":"L030","tier":"C","uncertain":false,"rationale":"Distribuidora pequena com analista usuário; score reduzido por porte, papel e região.","resolution":"single_annotator"}
+{"id":"L031","tier":"C","uncertain":false,"rationale":"Empresa agrícola com analista de compras usuário e mensagem sem intenção comercial.","resolution":"single_annotator"}
+{"id":"L032","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa explícita de alterar os critérios e o tier.","resolution":"single_annotator"}
+{"id":"L033","tier":"C","uncertain":false,"rationale":"Cargo técnico sem papel mapeável na compra e interesse apenas genérico.","resolution":"single_annotator"}
+{"id":"L034","tier":"D","uncertain":false,"rationale":"Registro apresenta dados sem sentido e conteúdo de teste, caracterizando spam.","resolution":"single_annotator"}
+{"id":"L035","tier":"D","uncertain":false,"rationale":"Sascar é concorrente de rastreamento e telemetria veicular.","resolution":"single_annotator"}
+{"id":"L036","tier":"C","uncertain":false,"rationale":"Empresa adjacente com analista de TI usuário e interesse exploratório, sem intenção de compra clara.","resolution":"single_annotator"}
+{"id":"L037","tier":"C","uncertain":false,"rationale":"Empresa agrícola pequena com analista usuário e interesse genérico; score abaixo de 55.","resolution":"single_annotator"}
+{"id":"L038","tier":"A","uncertain":true,"rationale":"Transportadora com gerente de frota e dor explícita de combustível; porte não informado.","resolution":"single_annotator"}
+{"id":"L039","tier":"C","uncertain":false,"rationale":"Estagiário não tem papel na compra e pesquisa para projeto interno.","resolution":"single_annotator"}
+{"id":"L040","tier":"B","uncertain":false,"rationale":"Locadora adjacente com diretor de operações, mas porte enterprise aplica teto B.","resolution":"single_annotator"}
+{"id":"L041","tier":"C","uncertain":false,"rationale":"Estagiária não tem papel na compra pela rubrica.","resolution":"single_annotator"}
+{"id":"L042","tier":"B","uncertain":true,"rationale":"Atacadista com gerente de logística e interesse comercial, mas porte e região não informados.","resolution":"single_annotator"}
+{"id":"L043","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa de injeção e pedido de informações internas.","resolution":"single_annotator"}
+{"id":"L044","tier":"A","uncertain":true,"rationale":"Empresa de transporte com diretor financeiro e dor explícita de manutenção; porte não informado.","resolution":"single_annotator"}
+{"id":"L045","tier":"A","uncertain":true,"rationale":"Distribuidora com frota própria, gerente de logística e troca de fornecedor; porte não informado.","resolution":"single_annotator"}
+{"id":"L046","tier":"B","uncertain":false,"rationale":"Transportadora com CFO e pedido de demonstração; porte enterprise aplica teto B.","resolution":"single_annotator"}
+{"id":"L047","tier":"A","uncertain":false,"rationale":"Transportadora com gerente de logística, 45 veículos e exigência explícita de telemetria.","resolution":"single_annotator"}
+{"id":"L048","tier":"C","uncertain":true,"rationale":"Possível operação de distribuição aderente, mas gerente administrativo não tem papel mapeável.","resolution":"single_annotator"}
+{"id":"L049","tier":"B","uncertain":true,"rationale":"Operação de campo adjacente com gerente influente; porte e intenção estão pouco evidenciados.","resolution":"single_annotator"}
+{"id":"L050","tier":"B","uncertain":true,"rationale":"Transportadora com analista de frota usuário e pedido de preços; porte não informado.","resolution":"single_annotator"}

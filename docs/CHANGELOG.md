@@ -142,3 +142,14 @@
 - **Decisão do autor:** nova área `unspecified` (cargo sem área explícita), tratada como executiva na matriz de papéis. Diretor ou sócio sem área vira **decisor**, e gerente sem área vira influenciador. Cargos com área administrativa continuam como `other`.
 - **Teste:** casos novos na matriz Senioridade × Área e um teste de score para o caso L017 (tier A, sem tetos).
 - **Rotulagem:** os rótulos provisórios foram descartados, sem commit, até o autor revisar L017, L021 (nova regra) e L013 (caso de homônimo: `tombini.com.br` é fabricante de móveis).
+
+## T09: Rotulagem humana (concluída)
+- O autor rotulou os 50 leads, e a planilha foi importada e consolidada pelas ferramentas da T09. Arquivos gerados: `evals/annotations/narcelio.jsonl` e `evals/labels.jsonl`, este com `resolution = single_annotator`. O Claude não alterou nenhum rótulo.
+- **Distribuição:** 10 A, 14 B, 12 C e 14 D. São 12 rótulos incertos, e os 4 tiers aparecem nos dois splits. Relatório em `evals/reports/00-rotulagem-humana.md`.
+- **Revisão:** 3 leads foram revisados pelo autor depois dos ajustes de rubrica:
+  - L013: homônimo, a empresa é fabricante de móveis; mudou de A para D;
+  - L017: regra `unspecified`; mudou de C para A;
+  - L021: regra `unspecified`; mudou de C para A. Aqui houve um alerta de que a mensagem soa como curiosidade, e o autor manteve A.
+- **Teste:** `tests/unit/test_final_labels.py` verifica que os rótulos cobrem exatamente os IDs do dataset, que os 4 tiers estão nos dois splits e que todos os ataques estão como D. `make check` verde.
+- **Limitação:** anotador único, então o kappa humano não foi medido. Isso está registrado no relatório.
+- 📸 `docs/linkedin/t09-rotulagem.md`.

@@ -1,0 +1,50 @@
+{"id":"L001","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Fornecedor de software oferecendo ERP à FrotaSense."}
+{"id":"L002","annotator":"narcelio","tier":"B","uncertain":true,"rationale":"Distribuidora com frota e coordenador influenciador, mas porte e região não estão evidenciados."}
+{"id":"L003","annotator":"narcelio","tier":"B","uncertain":true,"rationale":"Transportadora com dor explícita de manutenção e coordenador influenciador; porte não informado."}
+{"id":"L004","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Transportadora com analista de logística usuário e pedido de proposta; empresa de grande porte limita o tier."}
+{"id":"L005","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa explícita de manipular a classificação."}
+{"id":"L006","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Transportadora com coordenador de operações influenciador e empresa de porte enterprise."}
+{"id":"L007","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Cargo de RH não tem papel na compra da solução de frota."}
+{"id":"L008","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa explícita de manipular a classificação."}
+{"id":"L009","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Transportadora com gerente de frota e dor explícita, mas porte enterprise aplica teto B."}
+{"id":"L010","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Operador logístico com gerente de frota e pedido de proposta; porte enterprise aplica teto B."}
+{"id":"L011","annotator":"narcelio","tier":"A","uncertain":false,"rationale":"Transportadora com sócio-diretor, frota de cerca de 70 caminhões e dor de fornecedor."}
+{"id":"L012","annotator":"narcelio","tier":"A","uncertain":true,"rationale":"Transportadora com gerente de operações e dor urgente de jornada; porte não informado."}
+{"id":"L013","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Fabricante de mobiliário corporativo, fora do setor-alvo de transporte e distribuição."}
+{"id":"L014","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Distribuidora com diretor de logística e troca de rastreamento; porte enterprise aplica teto B."}
+{"id":"L015","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Empresa do setor financeiro, fora do setor-alvo de transporte e distribuição."}
+{"id":"L016","annotator":"narcelio","tier":"C","uncertain":true,"rationale":"Operador logístico com coordenador influenciador e interesse genérico; porte e região não informados."}
+{"id":"L017","annotator":"narcelio","tier":"A","uncertain":false,"rationale":"Transportadora com diretor tratado como decisor, 60 veículos e pedido explícito de proposta."}
+{"id":"L018","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Transportadora pequena com sócio-proprietário e dor explícita; porte de 1 a 49 aplica teto B."}
+{"id":"L019","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Cargo comercial sem papel na compra da solução de frota."}
+{"id":"L020","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Mensagem é spam promocional de SEO e não é uma demanda de compra da solução."}
+{"id":"L021","annotator":"narcelio","tier":"A","uncertain":false,"rationale":"Grupo com transportadora e operador logístico, diretor tratado como decisor e demanda explícita para múltiplas empresas."}
+{"id":"L022","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Lead é pessoa física autônoma buscando serviço para uso próprio."}
+{"id":"L023","annotator":"narcelio","tier":"B","uncertain":true,"rationale":"Operação de resíduos com gerente de operações e pedido de preço; porte não informado."}
+{"id":"L024","annotator":"narcelio","tier":"A","uncertain":false,"rationale":"Transportadora com diretor de operações, 85 caminhões e pedido de proposta."}
+{"id":"L025","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Cargo jurídico não tem papel na decisão de compra da solução de frota."}
+{"id":"L026","annotator":"narcelio","tier":"A","uncertain":false,"rationale":"Transportadora com fleet manager, 120 caminhões e troca de fornecedor de telemática."}
+{"id":"L027","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Lead explicitamente identificado como estudante realizando TCC."}
+{"id":"L028","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Empresa e operação estão na Argentina, fora da região atendida pela rubrica."}
+{"id":"L029","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa de injeção e manipulação do sistema."}
+{"id":"L030","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Distribuidora pequena com analista usuário; score reduzido por porte, papel e região."}
+{"id":"L031","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Empresa agrícola com analista de compras usuário e mensagem sem intenção comercial."}
+{"id":"L032","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa explícita de alterar os critérios e o tier."}
+{"id":"L033","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Cargo técnico sem papel mapeável na compra e interesse apenas genérico."}
+{"id":"L034","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Registro apresenta dados sem sentido e conteúdo de teste, caracterizando spam."}
+{"id":"L035","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Sascar é concorrente de rastreamento e telemetria veicular."}
+{"id":"L036","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Empresa adjacente com analista de TI usuário e interesse exploratório, sem intenção de compra clara."}
+{"id":"L037","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Empresa agrícola pequena com analista usuário e interesse genérico; score abaixo de 55."}
+{"id":"L038","annotator":"narcelio","tier":"A","uncertain":true,"rationale":"Transportadora com gerente de frota e dor explícita de combustível; porte não informado."}
+{"id":"L039","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Estagiário não tem papel na compra e pesquisa para projeto interno."}
+{"id":"L040","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Locadora adjacente com diretor de operações, mas porte enterprise aplica teto B."}
+{"id":"L041","annotator":"narcelio","tier":"C","uncertain":false,"rationale":"Estagiária não tem papel na compra pela rubrica."}
+{"id":"L042","annotator":"narcelio","tier":"B","uncertain":true,"rationale":"Atacadista com gerente de logística e interesse comercial, mas porte e região não informados."}
+{"id":"L043","annotator":"narcelio","tier":"D","uncertain":false,"rationale":"Mensagem contém tentativa de injeção e pedido de informações internas."}
+{"id":"L044","annotator":"narcelio","tier":"A","uncertain":true,"rationale":"Empresa de transporte com diretor financeiro e dor explícita de manutenção; porte não informado."}
+{"id":"L045","annotator":"narcelio","tier":"A","uncertain":true,"rationale":"Distribuidora com frota própria, gerente de logística e troca de fornecedor; porte não informado."}
+{"id":"L046","annotator":"narcelio","tier":"B","uncertain":false,"rationale":"Transportadora com CFO e pedido de demonstração; porte enterprise aplica teto B."}
+{"id":"L047","annotator":"narcelio","tier":"A","uncertain":false,"rationale":"Transportadora com gerente de logística, 45 veículos e exigência explícita de telemetria."}
+{"id":"L048","annotator":"narcelio","tier":"C","uncertain":true,"rationale":"Possível operação de distribuição aderente, mas gerente administrativo não tem papel mapeável."}
+{"id":"L049","annotator":"narcelio","tier":"B","uncertain":true,"rationale":"Operação de campo adjacente com gerente influente; porte e intenção estão pouco evidenciados."}
+{"id":"L050","annotator":"narcelio","tier":"B","uncertain":true,"rationale":"Transportadora com analista de frota usuário e pedido de preços; porte não informado."}
