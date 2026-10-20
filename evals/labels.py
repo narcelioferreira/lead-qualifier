@@ -173,6 +173,9 @@ def _final(
     )
 
 
+SHEET_DELIMITER = ";"
+
+
 def _safe_cell(value: str | None) -> str:
     """Neutraliza CSV injection: o texto do lead é não confiável e a planilha abre no Excel."""
     text = value or ""
@@ -185,8 +188,10 @@ def write_annotation_sheet(items: Sequence[DatasetItem], path: Path) -> None:
     O texto sai já sanitizado pelo `LeadInput`, igual ao que o agente recebe.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
+    # BOM + ";" é o formato que o Excel em português abre direto, com acentos e colunas
+    # corretos. LibreOffice e Google Sheets também reconhecem.
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.writer(fh, delimiter=SHEET_DELIMITER)
         writer.writerow([*SHEET_COLUMNS, *_ANSWER_COLUMNS])
         for item in items:
             row = {"id": item.id, **item.to_lead_input().model_dump(mode="json")}
@@ -200,7 +205,11 @@ def read_annotation_sheet(path: Path, annotator: str) -> list[AnnotatorLabel]:
         raise LabelError("anotador deve ter só letras minúsculas, dígitos, '_' ou '-'")
     labels: list[AnnotatorLabel] = []
     with path.open(encoding="utf-8-sig", newline="") as fh:
-        for number, row in enumerate(csv.DictReader(fh), start=2):
+        # Aceita ";" (padrão da planilha gerada) e "," (se o editor salvar assim).
+        header = fh.readline()
+        fh.seek(0)
+        delimiter = ";" if header.count(";") > header.count(",") else ","
+        for number, row in enumerate(csv.DictReader(fh, delimiter=delimiter), start=2):
             uncertain = (row.get("uncertain") or "").strip().lower()
             if uncertain not in _TRUE | _FALSE:
                 raise LabelError(f"{path.name}, linha {number}: uncertain inválido: {uncertain!r}")

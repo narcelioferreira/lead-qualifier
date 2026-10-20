@@ -130,3 +130,9 @@
   - empresas pequenas em mais de um tier e nos dois splits.
 - **Segurança:** o TLD reservado garante que um domínio fictício nunca aponte para uma empresa real. Na T12, a ferramenta de pesquisa deve servir essas fixtures **sem acesso à rede** e tratar o conteúdo como não confiável, igual a um site real.
 - **Pendente na T12:** a ferramenta de pesquisa precisa resolver domínios `.example` a partir de `evals/fixtures/companies/`.
+
+## Ajuste T09: planilha compatível com o Excel em português
+- **Problema:** a planilha saía em UTF-8 sem BOM e separada por vírgula. No Excel em português, isso quebra os acentos e coloca tudo em uma coluna.
+- **Correção:** a planilha passa a sair com BOM e `;`. O `import` detecta o separador sozinho (`;` ou `,`), então funciona com Excel, LibreOffice e Google Sheets.
+- **Teste:** novo teste confere o BOM e o `;` na saída e a importação nos dois separadores. São 165 testes, `make check` verde.
+- **Segurança:** a neutralização de CSV injection continua igual, já que o separador não muda o tratamento das células.

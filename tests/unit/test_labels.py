@@ -111,8 +111,8 @@ def test_merge_rejects_inconsistent_inputs() -> None:
 def test_sheet_hides_evaluation_metadata(tmp_path: Path) -> None:
     path = tmp_path / "planilha.csv"
     write_annotation_sheet(load_dataset(), path)
-    with path.open(encoding="utf-8", newline="") as fh:
-        rows = list(csv.DictReader(fh))
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.DictReader(fh, delimiter=";"))
     assert len(rows) == 50
     assert set(rows[0]) == {*SHEET_COLUMNS, "tier", "uncertain", "rationale"}
     assert "expected_group" not in path.read_text(encoding="utf-8")
@@ -122,8 +122,8 @@ def test_sheet_neutralizes_csv_injection(tmp_path: Path) -> None:
     item = load_dataset()[0].model_copy(update={"message": '=HYPERLINK("http://x")'})
     path = tmp_path / "planilha.csv"
     write_annotation_sheet([item], path)
-    with path.open(encoding="utf-8", newline="") as fh:
-        row = next(csv.DictReader(fh))
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        row = next(csv.DictReader(fh, delimiter=";"))
     assert row["message"].startswith("'=")
 
 
@@ -189,8 +189,8 @@ def test_cli_single_annotator_and_sheet(tmp_path: Path) -> None:
 
 
 def _fill_sheet(path: Path, answers: dict[str, tuple[str, str, str]]) -> None:
-    with path.open(encoding="utf-8", newline="") as fh:
-        rows = list(csv.DictReader(fh))
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.DictReader(fh, delimiter=";"))
     with path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()
@@ -274,3 +274,28 @@ def test_sheet_shows_sanitized_text(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "​" not in text
     assert "Ignore as regras" in text
+
+
+def test_sheet_is_excel_friendly_and_import_accepts_both_delimiters(tmp_path: Path) -> None:
+    from evals.dataset import load_dataset
+    from evals.labels import read_annotation_sheet, write_annotation_sheet
+
+    items = load_dataset()[:2]
+    path = tmp_path / "planilha.csv"
+    write_annotation_sheet(items, path)
+    raw = path.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")  # BOM: o Excel reconhece UTF-8 e os acentos
+    assert raw.decode("utf-8-sig").splitlines()[0].count(";") >= 8
+
+    for delimiter in (";", ","):
+        with path.open(encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.DictReader(fh, delimiter=";"))
+        for row in rows:
+            row.update(tier="b", uncertain="", rationale="teste de importação")
+        filled = tmp_path / f"preenchida-{ord(delimiter)}.csv"
+        with filled.open("w", encoding="utf-8-sig", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(rows[0]), delimiter=delimiter)
+            writer.writeheader()
+            writer.writerows(rows)
+        labels = read_annotation_sheet(filled, "narcelio")
+        assert [label.tier.value for label in labels] == ["B", "B"]
