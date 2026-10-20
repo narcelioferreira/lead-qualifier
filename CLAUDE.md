@@ -15,7 +15,7 @@ Projeto acadêmico com padrão profissional, que será publicado no LinkedIn. A 
 ## Documentos de referência (leia antes de cada task)
 - `docs/00-arquitetura.md`: arquitetura definitiva (grafo, routing, RAG, MCP, API, auditoria)
 - `docs/01-contexto-negocio.md`: cenário FrotaSense (aprovado)
-- `docs/02-ontologia-icp.md`: ontologia, rubrica, regras K1–K7, tetos C1–C3, exemplos E1–E8
+- `docs/02-ontologia-icp.md`: ontologia, rubrica, regras K1–K7, tetos C1–C4, exemplos E1–E8
 - `docs/03-contratos.md`: contratos de entrada e saída
 - `docs/04-plano-de-tasks.md`: as 36 tasks sequenciais (T01–T36), com testes e critérios de aceite
 - `docs/05-fontes-do-dataset.md`: fontes públicas e protocolo do dataset
@@ -45,7 +45,7 @@ Inclui: Python 3.12, uv, LangGraph, OpenAI API, Ollama (SLM), Postgres + pgvecto
 
 ## Status atual
 - ✅ T01–T08: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico e dataset de 50 leads (`evals/dataset.jsonl`). São 125 testes.
-- 🟡 **T09 em andamento:** as ferramentas de rotulagem e kappa estão prontas (`scripts/inter_annotator.py`, 160 testes). **Falta a rotulagem pelo autor** (passo a passo em `docs/05-fontes-do-dataset.md`). A T10 só começa depois do `labels.jsonl` final.
+- 🟡 **T09 em andamento:** as ferramentas de rotulagem e kappa estão prontas (`scripts/inter_annotator.py`, 164 testes). **Falta a rotulagem pelo autor** (passo a passo em `docs/05-fontes-do-dataset.md`). A T10 só começa depois do `labels.jsonl` final.
 - Antes da Fase C (T10), o autor precisa das chaves: OpenAI, Tavily e HubSpot (developer test account).
 
 ## Comandos

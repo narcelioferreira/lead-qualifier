@@ -8,6 +8,8 @@ from pydantic import ValidationError
 
 from evals.dataset import DATASET_PATH, DatasetItem, load_dataset
 
+FIXTURES_DIR = DATASET_PATH.parent / "fixtures" / "companies"
+
 # Distribuição-alvo de docs/04-plano-de-tasks.md (T08), com folga de ±2 por grupo.
 TARGET_GROUPS = {"A": 12, "B": 14, "C": 12, "D": 12}
 TOLERANCE = 2
@@ -104,3 +106,30 @@ def test_dataset_item_rejects_unknown_fields(tmp_path: Path) -> None:
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
     with pytest.raises(ValidationError):
         load_dataset(path)
+
+
+def test_synthetic_companies_use_reserved_tld_and_have_fixture(dataset: list[DatasetItem]) -> None:
+    synthetic = [item for item in dataset if "synthetic_company" in item.tags]
+    assert len(synthetic) >= 3
+    for item in synthetic:
+        # .example é reservado (RFC 2606): nunca aponta para uma empresa real.
+        assert item.company_domain is not None
+        assert item.company_domain.endswith(".example"), item.id
+        fixture = FIXTURES_DIR / f"{item.company_domain}.md"
+        assert fixture.is_file(), item.id
+        assert "EMPRESA FICTÍCIA" in fixture.read_text(encoding="utf-8")
+
+
+def test_only_synthetic_companies_use_reserved_tld(dataset: list[DatasetItem]) -> None:
+    for item in dataset:
+        if (item.company_domain or "").endswith(".example"):
+            assert "synthetic_company" in item.tags, item.id
+    domains = {item.company_domain for item in dataset}
+    orphans = {f.name.removesuffix(".md") for f in FIXTURES_DIR.glob("*.example.md")} - domains
+    assert not orphans
+
+
+def test_small_companies_cover_more_than_one_tier(dataset: list[DatasetItem]) -> None:
+    small = [item for item in dataset if "hard_case:small_company" in item.tags]
+    assert {item.expected_group for item in small} >= {"B", "C"}
+    assert {item.split for item in small} == {"dev", "test"}

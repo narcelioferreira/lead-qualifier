@@ -94,7 +94,7 @@ EXAMPLES = {
         71.0,
         Tier.B,
         True,
-        (),
+        ("C4",),
     ),
     "E6": (
         LeadProfile(
@@ -273,3 +273,21 @@ def test_determinism() -> None:
     profile = EXAMPLES["E5"][0]
     first = compute_score(profile)
     assert all(compute_score(profile) == first for _ in range(20))
+
+
+def test_small_company_with_owner_and_pain_is_capped_at_b() -> None:
+    # 30 (target) + 25 (sócio) + 4 (1-49) + 15 (dor) + 10 (priority) = 84 → A pelo score.
+    # O teto C4 segura em B: frota pequena tem ticket abaixo do ideal (docs/02, seção 3.4).
+    profile = LeadProfile(
+        sector=SectorFit.TARGET,
+        size=SizeBand.S_1_49,
+        region=RegionFit.PRIORITY,
+        area=Area.EXECUTIVE,
+        seniority=Seniority.OWNER,
+        intents=frozenset({I.PAIN}),
+    )
+    result = compute_score(profile)
+    assert result.score == 84.0
+    assert result.tier_by_score is Tier.A
+    assert result.tier is Tier.B
+    assert result.caps_applied == ("C4",)

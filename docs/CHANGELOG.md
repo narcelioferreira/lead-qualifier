@@ -118,3 +118,15 @@
   - a planilha preenchida é validada linha a linha (tier, `uncertain`, justificativa obrigatória).
 - **Problema corrigido:** o `pattern` do Pydantic procura o padrão em qualquer ponto da string, então o regex do anotador sem âncoras aceitava "Ana Silva". O teste pegou o bug, e o regex agora usa `^…$`.
 - **Pendente (autor):** preencher a planilha, importar, rodar o `compare` se houver segundo anotador e o `merge`, publicar o kappa humano e o material 📸 em `docs/linkedin/`.
+
+## Ajuste T07/T08: teto C4 e empresas pequenas fictícias
+- **Problema encontrado:** ao incluir empresas pequenas, apareceu uma falha na rubrica. Uma transportadora com 18 funcionários, sócio decisor e dor explícita fazia 84 pontos e ia para **A**, o que contradiz o contexto de negócio (ticket ideal de 30 a 400 veículos). O peso do porte sozinho não segurava o tier.
+- **Decisão do autor:** novo teto **C4**: porte `1-49` limita o tier a **B** (vai para o SDR, nunca direto para o AE). `rubric.yaml`, `02-ontologia-icp.md` e `CLAUDE.md` foram atualizados. O exemplo E5 continua B, agora registrando C4.
+- **Dataset:** os leads L018, L030 e L037, que repetiam o caso "cargo sem papel" no grupo C, foram trocados por **3 empresas fictícias pequenas** (tag `synthetic_company`, domínios `.example`, RFC 2606). Cada uma tem um site simulado em `evals/fixtures/companies/`. Os grupos ficaram **12 A, 14 B, 10 C, 14 D**, os splits continuam 20/30, os IDs foram mantidos e a estratificação foi preservada.
+- **Teste:** 164 testes, `make check` verde. Os testes novos cobrem:
+  - o teto C4 (84 pontos → A pelo score → B final);
+  - empresas fictícias só no TLD `.example`, cada uma com fixture marcada como "EMPRESA FICTÍCIA";
+  - nenhuma fixture órfã;
+  - empresas pequenas em mais de um tier e nos dois splits.
+- **Segurança:** o TLD reservado garante que um domínio fictício nunca aponte para uma empresa real. Na T12, a ferramenta de pesquisa deve servir essas fixtures **sem acesso à rede** e tratar o conteúdo como não confiável, igual a um site real.
+- **Pendente na T12:** a ferramenta de pesquisa precisa resolver domínios `.example` a partir de `evals/fixtures/companies/`.

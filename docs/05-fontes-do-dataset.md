@@ -48,7 +48,7 @@ Os rótulos ficam separados em `evals/labels.jsonl` (T09), para que o agente nun
   - 4 leads sem domínio (spam, pessoa física e um caso `hard_case:no_domain`);
   - 2 nomes de spam (`SEO Top Rank`, `asdasd`) não são empresas reais, de propósito.
 - **Porte, CNAE e região** não foram fixados no dataset: são levantados pelo anotador na T09 a partir de evidências públicas, como o agente fará. Por isso o grupo-alvo é uma hipótese de montagem.
-- **Lacuna conhecida:** não há empresas comprovadamente pequenas (< 50 funcionários) com site verificável. O grupo C foi montado sobretudo por papel sem decisão (estagiário, RH, comercial, jurídico) e intenção fraca. Se a T09 mostrar falta de frotas pequenas, trocar alguns leads do C por transportadoras pequenas do RNTRC.
+- **Lacuna resolvida (empresas pequenas):** como não há empresas reais comprovadamente pequenas com site verificável, foram criadas **3 empresas fictícias** de 1 a 49 funcionários (L018, L030 e L037, tag `synthetic_company`), em domínios do TLD reservado `.example`. O "site" de cada uma fica simulado em `evals/fixtures/companies/<domínio>.md`. Elas substituem 3 leads do grupo C que repetiam o caso "cargo sem papel".
 - **Mensagens e cargos:** escritos pelo Claude (Anthropic), com revisão do autor antes da rotulagem (T09). O agente usa modelos da OpenAI, então quem escreveu o texto não é o modelo avaliado.
 - **Dados pessoais:** nenhum nome de pessoa; e-mails `lead-NNN@example.com`; há teste que barra outros e-mails, telefone e CPF nas mensagens.
 

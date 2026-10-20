@@ -33,6 +33,7 @@ caps:
   - {id: C1, max_tier: B, size: ["1000+"]}
   - {id: C2, max_tier: B, buying_role_not_in: [decision_maker, influencer]}
   - {id: C3, max_tier: C, buying_role: [none]}
+  - {id: C4, max_tier: B, size: ["1-49"]}
 review:
   critical_criteria: [sector, size, buying_role]
   min_uncertain_to_review: 2

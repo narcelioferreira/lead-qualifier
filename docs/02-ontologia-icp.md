@@ -101,6 +101,7 @@ Basta uma regra disparar. Todas as regras disparadas são registradas, mas o mot
 | C1 | `SizeBand = 1000+` | **B** | Enterprise tem ciclo longo e vai para um processo próprio, com qualificação de SDR antes do AE |
 | C2 | `BuyingRole ∉ {decision_maker, influencer}` | **B** | Tier A exige papel relevante na compra |
 | C3 | `BuyingRole = none` | **C** | Sem papel na compra, o lead vai para nutrição |
+| C4 | `SizeBand = 1-49` | **B** | Frota pequena tem ticket abaixo do ideal (30–400 veículos): vai para o SDR, nunca direto para o AE |
 
 Tier final = o **pior** entre o tier do score e os tetos aplicáveis (ordem A > B > C > D).
 
@@ -116,7 +117,7 @@ Tier final = o **pior** entre o tier do score e os tetos aplicáveis (ordem A > 
 | E2 | Distribuidora de bebidas, 400 func., PR · Coordenador de Frota · "Gostaria de conhecer a plataforma" | target 30 | coordinator×fleet → influencer 15 | 200-999 20 | curiosity 6 | priority 10 | **81,0** | — | **A** |
 | E3 | Operador logístico (armazenagem), 300 func., MG · Gerente de Logística · "Perdemos controle do diesel" | adjacent 15 | manager×logistics → decision_maker 25 | 200-999 20 | pain 15 | priority 10 | **85,0** | — | **A** |
 | E4 | Transportadora, 2.500 func., RJ · CFO · "Queremos uma demo" | target 30 | c_level×finance → decision_maker 25 | 1000+ 10 | pricing_request 15 | priority 10 | **90,0** | C1 → teto B | **B** |
-| E5 | Transportadora, 30 func., BA · Sócio · "Quero conhecer" | target 30 | owner×executive → decision_maker 25 | 1-49 4 | curiosity 6 | secondary 6 | **71,0** | — | **B** (borderline: 71 está a 4 de 75) |
+| E5 | Transportadora, 30 func., BA · Sócio · "Quero conhecer" | target 30 | owner×executive → decision_maker 25 | 1-49 4 | curiosity 6 | secondary 6 | **71,0** | C4 → teto B | **B** (borderline: 71 está a 4 de 75) |
 | E6 | Distribuidora, 150 func., SC · Estagiário de Logística · "Pesquisando ferramentas" | target 30 | intern → none 0 | 50-199 20 | curiosity 6 | priority 10 | **66,0** | C3 → teto C | **C** |
 | E7 | Construtora, 250 func., GO · Analista de Compras · (mensagem vazia) | adjacent 15 | analyst×procurement → user 7,5 | 200-999 20 | none 0 | priority 10 | **52,5** | — | **C** (borderline: 52,5 está a 2,5 de 55) |
 | E8 | Empresa de rastreamento veicular, 90 func., SP · Gerente Comercial · "Gostaria de conhecer a solução de vocês" | (out) | sales → none | 50-199 | curiosity | priority | — | K2 `competitor` (também K6) | **D** |
@@ -127,7 +128,7 @@ Tier final = o **pior** entre o tier do score e os tetos aplicáveis (ordem A > 
 - E2: 30 + 25×0,6 + 20 + 15×0,4 + 10 = 30 + 15 + 20 + 6 + 10 = 81 → A (papel influencer passa no C2) ✔
 - E3: 30×0,5 + 25 + 20 + 15 + 10 = 15 + 25 + 20 + 15 + 10 = 85 → A ✔
 - E4: 30 + 25 + 20×0,5 + 15 + 10 = 90 → A pelo score; teto C1 → **B** ✔
-- E5: 30 + 25 + 20×0,2 + 15×0,4 + 10×0,6 = 30 + 25 + 4 + 6 + 6 = 71 → B; |75 − 71| = 4 ≤ 5 → borderline ✔
+- E5: 30 + 25 + 20×0,2 + 15×0,4 + 10×0,6 = 30 + 25 + 4 + 6 + 6 = 71 → B; teto C4 (B) aplicado sem efeito; |75 − 71| = 4 ≤ 5 → borderline ✔
 - E6: 30 + 0 + 20 + 6 + 10 = 66 → B pelo score; tetos C2 (B) e C3 (C) → **C** ✔
 - E7: 15 + 25×0,3 + 20 + 0 + 10 = 15 + 7,5 + 20 + 0 + 10 = 52,5 → C; |55 − 52,5| = 2,5 ≤ 5 → borderline ✔
 - E8: K2 (competitor) dispara primeiro; K6 também é registrada → **D** ✔
