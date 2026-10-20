@@ -22,7 +22,7 @@
 - **Segurança:** `permissions: contents: read` (menor privilégio), `persist-credentials: false`, timeout e cancelamento de execuções concorrentes.
 - **Teste local:** YAML válido e `actionlint` sem erros.
 - Repositório privado `narcelioferreira/lead-qualifier` criado e `main` enviado. O CI passou verde no `main`.
-- **Teste de falha:** numa branch temporária com um teste proposital `assert 1 == 2`, o CI falhou na etapa "Lint, tipos, testes e segurança", como esperado. A branch foi apagada em seguida.
+- **Teste de falha:** numa branch temporária com um teste proposital `assert 1 == 2`, o CI falhou na etapa "Lint, tipos, testes e segurança", como esperado. A branch `ci-failure-check` deve ser apagada manualmente no GitHub, porque o proxy desta sessão não permite deletar branches remotas.
 - **Correção durante a task:** o CI não disparava em push de branches fora do `main` (só em PR). Adicionei o gatilho manual `workflow_dispatch`, que permite rodar o CI em qualquer branch sem abrir um PR.
 
 ## T05: Config e contratos
