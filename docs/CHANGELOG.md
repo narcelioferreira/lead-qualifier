@@ -79,3 +79,6 @@
   - Resultado: 114 testes no total, com **100% de cobertura** em `scoring.py`.
 - **Segurança:** a pontuação não depende de texto livre. O LLM só influencia o resultado por valores enumerados e validados da ontologia, então uma injeção não consegue "pedir" um score. No pior caso, ela distorce um valor extraído, e esse risco é mitigado pelo guardrail (T28) e pela regra K1.
 - **Correções durante a task:** removido um teste-sentinela sem valor e um comentário confuso; ajustado o teste de determinismo (o `ScoreResult` contém listas e não é hashable).
+
+## Transição para o VS Code
+- Criado o `CLAUDE.md` na raiz, com contexto, escopo, ciclo obrigatório das tasks, convenções de segurança e status. Ele é lido automaticamente pelo Claude Code na máquina local.
