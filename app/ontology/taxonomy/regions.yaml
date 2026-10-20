@@ -1,0 +1,3 @@
+version: 1
+priority: [SP, RJ, MG, ES, PR, SC, RS, GO, MT, MS, DF]
+secondary: [AC, AP, AM, PA, RO, RR, TO, AL, BA, CE, MA, PB, PE, PI, RN, SE]

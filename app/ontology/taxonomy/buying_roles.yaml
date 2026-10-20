@@ -1,0 +1,16 @@
+# Seniority × grupo de áreas → BuyingRole. Ver seção 2.2 da ontologia.
+version: 1
+area_groups:
+  ops: [operations, logistics, fleet]
+  fin_exec: [finance, executive]
+  support: [it, procurement]
+  unrelated: [sales, marketing, hr, legal, other]
+matrix:
+  c_level:     {ops: decision_maker, fin_exec: decision_maker, support: influencer, unrelated: none}
+  owner:       {ops: decision_maker, fin_exec: decision_maker, support: influencer, unrelated: none}
+  director:    {ops: decision_maker, fin_exec: decision_maker, support: influencer, unrelated: none}
+  manager:     {ops: decision_maker, fin_exec: influencer,     support: influencer, unrelated: none}
+  coordinator: {ops: influencer,     fin_exec: influencer,     support: influencer, unrelated: none}
+  analyst:     {ops: user,           fin_exec: user,           support: user,       unrelated: none}
+  intern:      {ops: none,           fin_exec: none,           support: none,       unrelated: none}
+  unknown:     {ops: unknown,        fin_exec: unknown,        support: unknown,    unrelated: none}

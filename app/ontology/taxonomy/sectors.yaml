@@ -1,0 +1,20 @@
+# Mapeamento CNAE (prefixo da classe, só dígitos) → SectorFit.
+# O prefixo mais longo vence (ex.: "4930" antes de "49").
+version: 1
+default: out
+prefixes:
+  "4930": target   # transporte rodoviário de carga
+  "46": target     # comércio atacadista / distribuição
+  "5211": adjacent # armazéns gerais
+  "5250": adjacent # atividades relacionadas à organização do transporte de carga
+  "01": adjacent   # agricultura e pecuária
+  "41": adjacent   # construção de edifícios
+  "42": adjacent   # obras de infraestrutura
+  "43": adjacent   # serviços especializados para construção
+  "36": adjacent   # captação e distribuição de água
+  "37": adjacent   # esgoto
+  "38": adjacent   # coleta e tratamento de resíduos
+  "39": adjacent   # descontaminação
+  "35": adjacent   # eletricidade e gás (equipes de campo)
+  "61": adjacent   # telecomunicações (equipes de campo)
+  "7711": adjacent # locação de automóveis

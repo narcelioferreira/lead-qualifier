@@ -34,3 +34,24 @@
   - Limite de tamanho da mensagem (custo e abuso).
 - **Teste:** 38 testes, `make check` verde, cobertura de 98%.
 - **Correção durante a task:** removido um `type: ignore` desnecessário apontado pelo mypy strict.
+
+## T06: Ontologia em código
+- `app/ontology/models.py` (enums e `LeadProfile`, o contrato entre "o LLM extrai" e "a rubrica pontua"), `rubric.yaml`, taxonomias `sectors.yaml` (CNAE → SectorFit, pelo prefixo mais longo), `regions.yaml` (27 UFs) e `buying_roles.yaml` (matriz Senioridade × Área), além do `loader.py` com validação Pydantic.
+- **Validações no carregamento:**
+  - pesos somam 100;
+  - os fatores cobrem exatamente os valores da ontologia e ficam entre 0 e 1;
+  - limites de tier coerentes;
+  - regras sem condição ou IDs duplicados são rejeitados;
+  - um teto não pode levar a D;
+  - a matriz de papéis está completa;
+  - as UFs cobrem o Brasil sem sobreposição.
+- **Segurança:**
+  - YAML lido apenas com `safe_load`, com teste garantindo que tags `!!python/object` não são executadas;
+  - modelos com `extra="forbid"`;
+  - erros de configuração falham cedo e com mensagem clara.
+- **Teste:** 88 testes, `make check` verde, cobertura de 96% no loader.
+- **Problemas encontrados e corrigidos:**
+  1. Linha longa gerada pelo auto-fix do ruff (resolvido).
+  2. O `detect-secrets` apontou um falso positivo em `03-contratos.md` (nomes de variáveis), commitado na T05 porque o doc foi escrito depois do gate. Ele foi auditado e marcado no baseline.
+  3. **Falha de processo:** o scan de segredos só olhava arquivos rastreados pelo git. Agora inclui arquivos novos, e foi testado com um token falso não rastreado, que passou a ser detectado.
+  4. **Regra de processo adicionada:** documentação também entra antes do `make check` final da task.

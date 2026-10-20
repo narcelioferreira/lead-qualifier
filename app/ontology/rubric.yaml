@@ -1,0 +1,38 @@
+# Rubrica do ICP: fonte única de verdade para score, prompts e rotulagem humana.
+# Qualquer mudança aqui exige atualizar docs/02-ontologia-icp.md e os testes de scoring.
+version: 1
+criteria:
+  sector:
+    weight: 30
+    factors: {target: 1.0, adjacent: 0.5, out: 0.0, unknown: 0.25}
+  buying_role:
+    weight: 25
+    factors: {decision_maker: 1.0, influencer: 0.6, user: 0.3, none: 0.0, unknown: 0.3}
+  size:
+    weight: 20
+    factors: {"50-199": 1.0, "200-999": 1.0, "1000+": 0.5, "1-49": 0.2, unknown: 0.3}
+  intent:
+    weight: 15
+    factors: {pain: 1.0, pricing_request: 1.0, vendor_switch: 1.0, curiosity: 0.4, none: 0.0}
+  region:
+    weight: 10
+    factors: {priority: 1.0, secondary: 0.6, abroad: 0.0, unknown: 0.5}
+tiers:
+  A: 75
+  B: 55
+borderline_margin: 5
+disqualifiers:  # ordem = precedência
+  - {id: K1, reason: spam_or_manipulation, flags: [spam, injection]}
+  - {id: K2, reason: competitor, company_kind: [competitor]}
+  - {id: K3, reason: vendor_pitch, company_kind: [vendor]}
+  - {id: K4, reason: not_a_buyer, flags: [student, job_seeker]}
+  - {id: K5, reason: individual_b2c, flags: [individual]}
+  - {id: K6, reason: out_of_sector, sector: [out]}
+  - {id: K7, reason: out_of_region, region: [abroad]}
+caps:
+  - {id: C1, max_tier: B, size: ["1000+"]}
+  - {id: C2, max_tier: B, buying_role_not_in: [decision_maker, influencer]}
+  - {id: C3, max_tier: C, buying_role: [none]}
+review:
+  critical_criteria: [sector, size, buying_role]
+  min_uncertain_to_review: 2
