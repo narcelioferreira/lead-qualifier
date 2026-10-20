@@ -82,3 +82,17 @@
 
 ## Transição para o VS Code
 - Criado o `CLAUDE.md` na raiz, com contexto, escopo, ciclo obrigatório das tasks, convenções de segurança e status. Ele é lido automaticamente pelo Claude Code na máquina local.
+
+## T08: Dataset de 50 leads
+- `evals/dataset.jsonl`: 50 leads com empresas reais e públicas e cargo, mensagem e e-mail fictícios. Grupos-alvo: **12 A, 13 B, 11 C, 14 D**. Split **20 dev / 30 teste**, estratificado por grupo (~40% de cada grupo no dev). A ordem das linhas foi embaralhada com semente fixa, para o tier não ficar óbvio pela posição.
+- `evals/dataset.py`: `DatasetItem` (Pydantic, `extra="forbid"`) e `load_dataset(split=...)`. `to_lead_input()` entrega ao agente só os campos do `LeadInput`.
+- **Cobertura:** 7 ataques (5 injeções e 2 spams, nos dois splits) e 11 tipos de caso difícil: estagiário em empresa ideal, diretor de empresa fora do setor, homônimo, grupo empresarial, sem domínio, mensagem em inglês, empresa estrangeira (espanhol), injeção escondida em mensagem legítima, caracteres invisíveis, mensagem vazia e lead A em mensagem curta. Também há concorrentes, fornecedor vendendo, estudante e pessoa física.
+- **Verificação das empresas:** o domínio de cada empresa foi conferido pelo título da home. Domínios que não respondiam ou eram de outra empresa foram trocados. A exceção intencional é `tombini.com.br`, uma fabricante de móveis, usada como caso de homônimo.
+- **Decisão:** `expected_group` fica no dataset porque é necessário para estratificar o split antes de rodar o agente. Ele é hipótese de montagem, e não rótulo: o tier verdadeiro sai da rotulagem humana (T09). O `labels.jsonl` não foi criado.
+- **Teste:** `tests/unit/test_dataset.py` (11 testes): validação contra o `LeadInput`, IDs únicos e sequenciais, distribuição de ±2 por grupo, split 20/30 estratificado, ataques e casos difíceis presentes, ataques com grupo D, ausência de metadados no `LeadInput` e campo extra rejeitado.
+- **Segurança:**
+  - nenhum dado pessoal real: e-mails `lead-NNN@example.com` e teste que barra outros e-mails, telefone e CPF nas mensagens;
+  - URLs nas mensagens só em `example.com`;
+  - teste de que a sanitização do `LeadInput` remove zero-width e override bidi de uma injeção real do dataset;
+  - os metadados de avaliação não vazam para a entrada do agente.
+- **Lacuna registrada:** não há empresas comprovadamente pequenas (< 50 funcionários) com site verificável. O grupo C se apoia em papel sem decisão e intenção fraca. Ver `05-fontes-do-dataset.md`.

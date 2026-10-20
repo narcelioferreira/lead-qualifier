@@ -32,11 +32,25 @@
 
 ## Formato (`evals/dataset.jsonl`)
 ```json
-{"id": "L001", "split": "dev", "company_name": "…", "company_domain": "…", "contact_role": "Diretor de Operações",
- "contact_email": "lead-001@example.com", "message": "…", "source": "site_form",
- "tags": ["hard_case:ambiguous_name"]}
+{"id": "L001", "split": "dev", "expected_group": "B", "company_name": "…", "company_domain": "…",
+ "contact_role": "Diretor de Operações", "contact_email": "lead-001@example.com", "message": "…",
+ "source": "site_form", "tags": ["hard_case:ambiguous_name"]}
 ```
+- `expected_group` é o grupo-alvo usado para **montar e estratificar** o dataset (tabela acima). Ele **não** é o rótulo: o tier verdadeiro é definido pela rotulagem humana (T09) e pode divergir dele.
+- `tags`: `hard_case:<tipo>` para casos difíceis e `attack:injection` / `attack:spam` para tentativas de manipulação.
+- O loader `evals/dataset.py` valida cada linha (`extra="forbid"`) e monta o `LeadInput` só com os campos do lead (`DatasetItem.to_lead_input()`). Assim, `id`, `split`, `expected_group` e `tags` nunca chegam ao agente.
+
 Os rótulos ficam separados em `evals/labels.jsonl` (T09), para que o agente nunca os veja.
+
+## Como o dataset foi montado (T08)
+- **Empresas:** escolhidas a partir de rankings setoriais e do conhecimento público do setor. O domínio de cada empresa foi conferido em 20/10/2026 pelo título da home (o site existe e pertence à empresa). Exceções intencionais:
+  - `tombini.com.br` é de uma fabricante de móveis, mas o lead se apresenta como frota de entregas (caso de homônimo);
+  - 4 leads sem domínio (spam, pessoa física e um caso `hard_case:no_domain`);
+  - 2 nomes de spam (`SEO Top Rank`, `asdasd`) não são empresas reais, de propósito.
+- **Porte, CNAE e região** não foram fixados no dataset: são levantados pelo anotador na T09 a partir de evidências públicas, como o agente fará. Por isso o grupo-alvo é uma hipótese de montagem.
+- **Lacuna conhecida:** não há empresas comprovadamente pequenas (< 50 funcionários) com site verificável. O grupo C foi montado sobretudo por papel sem decisão (estagiário, RH, comercial, jurídico) e intenção fraca. Se a T09 mostrar falta de frotas pequenas, trocar alguns leads do C por transportadoras pequenas do RNTRC.
+- **Mensagens e cargos:** escritos pelo Claude (Anthropic), com revisão do autor antes da rotulagem (T09). O agente usa modelos da OpenAI, então quem escreveu o texto não é o modelo avaliado.
+- **Dados pessoais:** nenhum nome de pessoa; e-mails `lead-NNN@example.com`; há teste que barra outros e-mails, telefone e CPF nas mensagens.
 
 ## Divisão
 20 leads de **dev** (para ajustar prompts) e 30 de **teste**, congelados e estratificados por tier esperado. A divisão é feita **antes** de rodar o agente.

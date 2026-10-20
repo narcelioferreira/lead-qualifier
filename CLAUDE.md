@@ -44,8 +44,8 @@ Inclui: Python 3.12, uv, LangGraph, OpenAI API, Ollama (SLM), Postgres + pgvecto
 - A **rotulagem humana (T09) é feita pelo autor**, e não pelo Claude. Nunca gere ou altere `evals/labels.jsonl`.
 
 ## Status atual
-- ✅ T01–T07: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico. São 114 testes.
-- ⏭️ **Próxima: T08**, o dataset de 50 leads (`evals/dataset.jsonl`), conforme `docs/05-fontes-do-dataset.md`.
+- ✅ T01–T08: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico e dataset de 50 leads (`evals/dataset.jsonl`). São 125 testes.
+- ⏭️ **Próxima: T09**, a rotulagem humana, feita pelo autor (não pelo Claude).
 - Antes da Fase C (T10), o autor precisa das chaves: OpenAI, Tavily e HubSpot (developer test account).
 
 ## Comandos
