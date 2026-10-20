@@ -94,4 +94,4 @@ Brasil, com prioridade para **Sudeste, Sul e Centro-Oeste**, onde há equipe de 
 - [x] Personas com papel na compra
 - [x] Sinais de intenção e critérios eliminatórios
 - [x] Mapeamento tier → próximo passo com SLA
-- [ ] **Revisão e aprovação do autor do projeto**
+- [x] **Revisão e aprovação do autor do projeto** (aprovado)
