@@ -5,7 +5,7 @@ description = "Agente LangGraph de qualificação de leads B2B com ontologia, RA
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "pydantic>=2.9",
+    "pydantic[email]>=2.9",
     "pydantic-settings>=2.6",
     "pyyaml>=6.0",
 ]

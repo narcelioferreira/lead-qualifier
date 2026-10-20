@@ -22,3 +22,15 @@
 - **Segurança:** `permissions: contents: read` (menor privilégio), `persist-credentials: false`, timeout e cancelamento de execuções concorrentes.
 - **Teste local:** YAML válido e `actionlint` sem erros.
 - **Pendente:** criar o repositório no GitHub, fazer o push, confirmar o workflow verde e testar uma falha proposital.
+
+## T05: Config e contratos
+- `app/config.py` (pydantic-settings) e `app/schemas.py` (`LeadInput`, `QualificationResult`, `CriterionScore`, `Evidence`, `NextStep`, `Tier`). Documentado em `03-contratos.md`.
+- **Segurança:**
+  - Segredos em `SecretStr`, com teste garantindo que não vazam no `repr`.
+  - `API_KEY` com mínimo de 32 caracteres, e o valor de exemplo é rejeitado.
+  - O domínio é normalizado e bloqueia IP, localhost, sufixos internos, porta e credenciais. Isso previne **SSRF** quando o agente buscar o site da empresa; há teste com o endpoint de metadata de cloud `169.254.169.254`.
+  - O texto do lead é sanitizado: remove caracteres invisíveis e de controle usados para esconder prompt injection, e aplica NFKC.
+  - `extra="forbid"` impede que o cliente injete campos como `tier`.
+  - Limite de tamanho da mensagem (custo e abuso).
+- **Teste:** 38 testes, `make check` verde, cobertura de 98%.
+- **Correção durante a task:** removido um `type: ignore` desnecessário apontado pelo mypy strict.
