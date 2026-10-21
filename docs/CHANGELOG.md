@@ -204,3 +204,12 @@
   - `json_validate_failed`;
   - recusa, resposta truncada e resposta vazia no formato Chat Completions.
 - **Pendente:** teste de integração real com a `GROQ_API_KEY` no `.env`.
+- **Integração real (21/10/2026):** `test_groq_live` verde. Medição com o prompt mínimo do teste:
+
+  | Modelo | Tokens (in / out, raciocínio) | Latência | Custo equivalente | Tentativas |
+  |---|---|---:|---:|---:|
+  | `openai/gpt-oss-20b` | 159 / 54 (36) | 543 ms | US$ 0,0000281 | 1 |
+  | `openai/gpt-oss-120b` | 207 / 148 (130) | 684 ms | US$ 0,0001198 | 1 |
+
+  Os custos foram conferidos à mão contra o preço de lista. O teste do Ollama segue pulado até o container subir (T11).
+- **Correção durante a task:** o `.env` ainda tinha o `API_KEY` de exemplo, que o `config.py` rejeita de propósito. Foi gerado um valor aleatório com `secrets.token_urlsafe(48)`, sem exibi-lo, e o `.env` ficou com permissão `600`.
