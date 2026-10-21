@@ -8,6 +8,8 @@ dependencies = [
     "pydantic[email]>=2.9",
     "pydantic-settings>=2.6",
     "pyyaml>=6.0",
+    "httpx>=0.28",
+    "tenacity>=9.0",
 ]
 
 [dependency-groups]
@@ -21,6 +23,7 @@ dev = [
     "pip-audit>=2.7",
     "detect-secrets>=1.5",
     "pre-commit>=4.0",
+    "respx>=0.22",
 ]
 
 [build-system]

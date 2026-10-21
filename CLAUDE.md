@@ -46,8 +46,8 @@ Inclui: Python 3.12, uv, LangGraph, OpenAI API, Ollama (SLM), Postgres + pgvecto
 ## Status atual
 - ✅ T01–T08: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico e dataset de 50 leads (`evals/dataset.jsonl`). São 125 testes.
 - ✅ T09: rotulagem humana concluída (`evals/labels.jsonl`, 10 A · 14 B · 12 C · 14 D, anotador único).
-- ⏭️ **Próxima: T10**, clientes LLM e contabilização de custo.
-- Antes da Fase C (T10), o autor precisa das chaves: OpenAI, Tavily e HubSpot (developer test account).
+- 🟡 T10: clientes OpenAI (Responses API) e Ollama, `models.yaml` com snapshots datados e custo em `Decimal`. Testes unitários verdes (209 no total). **Falta o teste de integração real** (`uv run pytest -m integration`), que precisa de `.env` com `OPENAI_API_KEY` e do Ollama com `qwen3:4b`.
+- ⏭️ Depois: T11, Postgres + pgvector e auditoria (Docker). O autor ainda precisa das chaves da Tavily (T12) e do HubSpot (T17).
 
 ## Comandos
 ```bash

@@ -153,3 +153,32 @@
 - **Teste:** `tests/unit/test_final_labels.py` verifica que os rótulos cobrem exatamente os IDs do dataset, que os 4 tiers estão nos dois splits e que todos os ataques estão como D. `make check` verde.
 - **Limitação:** anotador único, então o kappa humano não foi medido. Isso está registrado no relatório.
 - 📸 `docs/linkedin/t09-rotulagem.md`.
+
+## T10: Clientes LLM e contabilização de custo
+- `app/routing/models.yaml` e `app/routing/cost.py`: catálogo de modelos validado por Pydantic e `cost_usd(Usage, ModelSpec)`, calculado em `Decimal` e separando input, input em cache e output.
+  - **mini:** `gpt-5.4-mini-2026-03-17` (US$ 0,75 / 0,075 / 4,50 por 1M);
+  - **maior:** `gpt-5.4-2026-03-05` (US$ 2,50 / 0,25 / 15,00);
+  - **embeddings:** `text-embedding-3-small` (US$ 0,02);
+  - **SLM:** `qwen3:4b` no Ollama, provisório até o benchmark da T28.
+  - Preços conferidos na página oficial em 21/10/2026.
+- `app/llm/`: `OpenAIClient` (Responses API) e `OllamaClient` (`/api/chat` com `format` = JSON Schema), com interface comum `structured(spec, messages, schema) → LLMResult` (saída validada, uso, custo, latência e tentativas).
+- **Decisões:**
+  - **Snapshot datado obrigatório:** os modelos `gpt-6` não têm versão datada (só alias), então ficaram de fora. O catálogo rejeita alias em modelo de chat da OpenAI e tag `latest` no Ollama, porque um alias que muda de versão invalidaria a comparação entre as avaliações.
+  - **Responses API, e não Chat Completions:** é a recomendada pela OpenAI para modelos de raciocínio, e a Chat Completions tem restrições de tool calling nos modelos novos.
+  - **httpx direto, e não o SDK:** dá controle de retry, timeout e do que entra nas mensagens de erro. Novas dependências: `httpx`, `tenacity` e `respx` (dev).
+  - **Schema estrito:** `strict_json_schema` força `additionalProperties: false` e todos os campos em `required`.
+- **Teste:** `test_cost.py` e `test_llm_clients.py` (35 testes, todos com HTTP mockado):
+  - custo conferido à mão (mini US$ 0,0129 e maior US$ 0,043 para 10k de input, sendo 2k em cache, e 1,5k de output) e soma exata de 1.000 chamadas;
+  - catálogo inválido (alias, tag `latest`, preço de cache maior que o de input, campo extra, YAML com tag Python);
+  - retry em 429/500/503 e em timeout, até 3 tentativas;
+  - 400 não é repetido;
+  - saída fora do schema, campo extra (`tier`), JSON inválido, resposta incompleta, recusa e resposta vazia;
+  - Ollama fora do ar, truncado e com modelo inexistente.
+- `tests/integration/test_llm_live.py`: uma chamada real mínima a cada provedor (`-m integration`). **Pendente:** está pulado porque ainda não há `.env` com `OPENAI_API_KEY` nem Ollama rodando. O aceite da T10 depende dessa execução.
+- **Segurança:**
+  - a chave só existe em `SecretStr` e no header, e há teste garantindo que não aparece no `repr`;
+  - as mensagens de erro levam só `type`/`code` e 200 caracteres do erro do provedor, nunca a saída do modelo (que pode ecoar conteúdo do lead); há teste para isso;
+  - `store: false` na OpenAI, porque o lead tem dados de contato;
+  - a saída é sempre validada por schema, e campos extras são rejeitados, então um `"tier": "A"` injetado não passa;
+  - timeouts explícitos;
+  - a URL do Ollama vem só da configuração.

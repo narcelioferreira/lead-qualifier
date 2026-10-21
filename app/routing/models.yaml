@@ -1,0 +1,34 @@
+# Catálogo de modelos: versão fixada e preço por 1M de tokens (US$).
+# Preços conferidos em 2026-10-21 em https://developers.openai.com/api/docs/pricing (tier Standard).
+# Modelos de chat da OpenAI usam sempre snapshot datado: um alias como "gpt-5.4-mini" pode mudar
+# de versão sem aviso e invalidar a comparação entre avaliações.
+version: 1
+prices_checked_at: 2026-10-21
+models:
+  openai-mini:
+    provider: openai
+    kind: chat
+    model: gpt-5.4-mini-2026-03-17
+    reasoning_effort: low
+    max_output_tokens: 4000
+    price_per_1m: {input: 0.75, cached_input: 0.075, output: 4.50}
+  openai-large:
+    provider: openai
+    kind: chat
+    model: gpt-5.4-2026-03-05
+    reasoning_effort: medium
+    max_output_tokens: 8000
+    price_per_1m: {input: 2.50, cached_input: 0.25, output: 15.00}
+  openai-embedding:
+    provider: openai
+    kind: embedding
+    model: text-embedding-3-small
+    price_per_1m: {input: 0.02, cached_input: 0.02, output: 0}
+  # SLM local (guardrail e normalização de cargo). Provisório: o modelo definitivo é escolhido
+  # por benchmark no subconjunto do guardrail (T28). Custo de API zero; o custo é de infra.
+  ollama-slm:
+    provider: ollama
+    kind: chat
+    model: qwen3:4b
+    max_output_tokens: 1000
+    price_per_1m: {input: 0, cached_input: 0, output: 0}
