@@ -82,8 +82,8 @@ audit_log ─► END
 | `validate_input` | — | Valida o schema, normaliza o domínio e limita o tamanho da mensagem |
 | `guardrail` | SLM (Ollama) | Mensagem e cargo → `{is_spam, is_injection, is_out_of_scope, reason}`. O conteúdo do lead vai delimitado no prompt e é tratado sempre como dado. Fallback: mini |
 | `agentic_research` | mini | Planeja as consultas e chama as tools MCP (`search_company_web`, `fetch_company_site`, `search_knowledge_base`). Faz uma autoavaliação no estilo Corrective RAG ("a evidência basta para setor, porte e país?"); se não bastar, reformula a consulta. Tem limite de iterações e de custo |
-| `normalize_to_ontology` | mini | Evidência bruta → `CompanyProfile` e `ContactProfile` tipados com valores da ontologia. Cada campo traz `value`, `source_url` e `certainty` |
-| `assess_criteria` | router | Cada critério da rubrica → nível (`strong/partial/none/unknown`) + evidência + confiança |
+| `normalize_to_ontology` | mini | Evidência bruta → **fatos** (CNAE, UF, país, funcionários, frota) e classificações enumeradas, com certeza e ids das evidências citadas. O **código** mapeia os fatos para setor (CNAE, só se o CNAE aparecer nas evidências), região (UF/país) e porte (funcionários, ou frota × 2,5 com certeza baixa) e calcula a confiança |
+| `assess_criteria` | router | Perfil + evidências citadas → **justificativa** em linguagem natural com citações (`E1`, `E2`...). Não altera valores nem pontua |
 | `compute_score` | código | Soma ponderada → score → tier. Aplica regras eliminatórias (concorrente, estudante, fornecedor) |
 | `human_review` | — | `interrupt()` do LangGraph. Retomado via `POST /v1/runs/{id}/review` |
 | `suggest_next_step` | mini | Tier + perfil → ação, canal, prazo e argumento, buscando no playbook e nos cases (RAG) com citação do documento |

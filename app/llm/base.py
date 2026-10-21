@@ -5,10 +5,10 @@ livre do LLM nunca chega ao grafo sem passar por esse schema.
 """
 
 import copy
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import httpx
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -40,6 +40,14 @@ class LLMResult[T: BaseModel]:
     latency_ms: float
     cost_usd: Decimal
     attempts: int
+
+
+class StructuredLLM(Protocol):
+    """Cliente de LLM com saída estruturada (Groq, Ollama ou um mock nos testes)."""
+
+    async def structured[T: BaseModel](
+        self, spec: ModelSpec, messages: Sequence[Message], schema: type[T]
+    ) -> LLMResult[T]: ...
 
 
 class LLMError(Exception):
@@ -78,27 +86,51 @@ async def send_with_retry(
 def strict_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
     """Schema JSON no formato exigido pelo modo estrito de structured output.
 
-    Todo objeto recebe `additionalProperties: false` e todas as propriedades em `required`
-    (campos com default passam a ser obrigatórios na saída do modelo). `title` e `default`
-    são removidos porque não fazem parte do subconjunto aceito.
+    - Todo objeto recebe `additionalProperties: false` e todas as propriedades em `required`
+      (campos com default passam a ser obrigatórios na saída do modelo).
+    - Campo opcional (`X | None`, que o Pydantic gera como `anyOf: [X, null]`) vira a forma
+      anulável `type: [..., "null"]`: a Groq rejeita `anyOf` sem discriminador.
+    - `title` e `default` são removidos (fora do subconjunto aceito).
     """
     result = copy.deepcopy(schema.model_json_schema())
+    defs: dict[str, Any] = result.get("$defs", {})
 
-    def visit(node: Any) -> None:
+    def nullable(node: dict[str, Any]) -> dict[str, Any] | None:
+        branches = node.get("anyOf")
+        if not isinstance(branches, list) or len(branches) != 2:
+            return None
+        others = [b for b in branches if b != {"type": "null"}]
+        if len(others) != 1:
+            return None
+        other = dict(others[0])
+        ref = other.pop("$ref", None)
+        if ref:
+            other = {**copy.deepcopy(defs[ref.rsplit("/", 1)[-1]]), **other}
+        if "type" not in other or isinstance(other["type"], list):
+            return None
+        merged = {k: v for k, v in node.items() if k != "anyOf"} | other
+        merged["type"] = [other["type"], "null"]
+        if "enum" in merged:
+            merged["enum"] = [*merged["enum"], None]
+        return merged
+
+    def visit(node: Any) -> Any:
         if isinstance(node, dict):
+            flat = nullable(node)
+            if flat is not None:
+                node = flat
             node.pop("title", None)
             node.pop("default", None)
             if node.get("type") == "object" and "properties" in node:
                 node["additionalProperties"] = False
                 node["required"] = list(node["properties"])
-            for value in node.values():
-                visit(value)
-        elif isinstance(node, list):
-            for value in node:
-                visit(value)
+            return {k: visit(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [visit(v) for v in node]
+        return node
 
-    visit(result)
-    return result
+    strict: dict[str, Any] = visit(result)
+    return strict
 
 
 def parse_output[T: BaseModel](text: str, schema: type[T], provider: str) -> T:

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.audit.repository import StepRecord
-from app.graph.nodes.core import build_result
+from app.graph.nodes.core import finalize
 from app.graph.state import QualificationState
 from app.ontology.models import LeadProfile
 from app.schemas import Evidence, EvidenceSource
@@ -47,13 +47,12 @@ def assess(state: QualificationState) -> dict[str, Any]:
 
 
 def audit_log(state: QualificationState) -> dict[str, Any]:
-    """Fecha a execução. A versão real (T14) também grava em `agent_runs`/`agent_steps`."""
-    if state.get("status") == "rejected":
-        return {"steps": [StepRecord(node="audit_log", output={"status": "rejected"})]}
-    result = build_result(state)
-    status = "needs_review" if result.needs_human_review else "completed"
-    return {
-        "result": result,
+    """Fecha a execução sem gravar no banco (a versão real está em `nodes/mvp.py`)."""
+    status, result = finalize(state)
+    update: dict[str, Any] = {
         "status": status,
         "steps": [StepRecord(node="audit_log", output={"status": status})],
     }
+    if result is not None:
+        update["result"] = result
+    return update

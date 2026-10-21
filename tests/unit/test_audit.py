@@ -98,7 +98,7 @@ def test_metadata_has_audit_tables_with_named_constraints() -> None:
 def test_migrations_have_single_head() -> None:
     config = Config(str(ROOT / "alembic.ini"))
     heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == ["0002"]
+    assert heads == ["0003"]
 
 
 def test_alembic_ini_has_no_database_url() -> None:

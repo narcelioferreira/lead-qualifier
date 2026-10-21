@@ -34,7 +34,7 @@ NAMING = {
     "pk": "pk_%(table_name)s",
 }
 
-RUN_STATUSES = ("running", "completed", "failed", "needs_review")
+RUN_STATUSES = ("running", "completed", "failed", "needs_review", "rejected")
 TIERS = ("A", "B", "C", "D")
 Money = Numeric(14, 8)
 

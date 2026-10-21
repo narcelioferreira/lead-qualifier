@@ -27,10 +27,13 @@ class GraphInput(TypedDict):
 class QualificationState(GraphInput, total=False):
     prompt_version: str
     status: Status
+    started_at: float  # epoch (s), para a latência total gravada na auditoria
     lead: LeadInput
     evidence: Annotated[list[Evidence], operator.add]
     research_iterations: int
     profile: LeadProfile
+    # Ids (E1, E2...) das evidências que o LLM citou na extração, já filtrados.
+    evidence_ids: list[str]
     # Justificativa em linguagem natural do assess (o LLM justifica; o código pontua).
     rationale: str
     confidence: float
@@ -41,7 +44,9 @@ class QualificationState(GraphInput, total=False):
 
 
 # Chaves que o state final sempre tem, em qualquer caminho (feliz ou rejeitado).
-FINAL_KEYS = frozenset({"run_id", "raw_input", "prompt_version", "status", "steps", "errors"})
+FINAL_KEYS = frozenset(
+    {"run_id", "raw_input", "prompt_version", "status", "started_at", "steps", "errors"}
+)
 # Chaves adicionais do caminho feliz.
 HAPPY_PATH_KEYS = FINAL_KEYS | {
     "lead",

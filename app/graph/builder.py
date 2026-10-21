@@ -3,7 +3,10 @@
     validate_input ─(inválido)─► audit_log ─► END
          │
          ▼
-    research → normalize → assess → compute_score → audit_log ─► END
+    research → normalize ─(falhou)─► audit_log
+                   │
+                   ▼
+               assess → compute_score → audit_log ─► END
 
 Os nós de pesquisa, LLM e auditoria são injetados (`GraphNodes`): stubs na T13, reais na T14
 e mocks nos testes de grafo. `validate_input` e `compute_score` são código determinístico e
@@ -58,7 +61,11 @@ def build_graph(nodes: GraphNodes | None = None) -> CompiledGraph:
         {"continue": "research", "reject": "audit_log"},
     )
     graph.add_edge("research", "normalize")
-    graph.add_edge("normalize", "assess")
+    graph.add_conditional_edges(
+        "normalize",
+        core.route_unless_failed,
+        {"continue": "assess", "fail": "audit_log"},
+    )
     graph.add_edge("assess", "compute_score")
     graph.add_edge("compute_score", "audit_log")
     graph.add_edge("audit_log", END)

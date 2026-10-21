@@ -201,3 +201,42 @@ def test_downgrade_and_upgrade_again(migrated: str) -> None:
     with engine.connect() as conn:
         assert {"agent_runs", "agent_steps"} <= set(inspect(conn).get_table_names())
     engine.dispose()
+
+
+async def test_record_run_writes_complete_run_in_one_call(repo: AuditRepository) -> None:
+    run_id = uuid.uuid4()
+    await repo.record_run(
+        run_id=run_id,
+        prompt_version="v1",
+        lead=LEAD,
+        status="completed",
+        steps=[StepRecord(node="validate_input"), _step("normalize", "0.0002"),
+               _step("assess", "0.0001")],
+        result=_result(run_id),
+        errors=["site: home: HTTP 404"],
+        latency_ms=1234,
+    )  # fmt: skip
+    run = await repo.get_run(run_id)
+    assert run is not None
+    assert (run.status, run.tier, run.cost_usd) == ("completed", "A", Decimal("0.0003"))
+    assert run.errors == ["site: home: HTTP 404"]
+    assert [s.node for s in run.steps] == ["validate_input", "normalize", "assess"]
+    assert run.lead_input["contact_email"] == "l***@example.com"
+
+
+async def test_record_run_rejected_keeps_only_field_names(repo: AuditRepository) -> None:
+    run_id = uuid.uuid4()
+    await repo.record_run(
+        run_id=run_id,
+        prompt_version="v1",
+        lead=None,
+        status="rejected",
+        steps=[StepRecord(node="validate_input")],
+        errors=["entrada inválida: tier: extra_forbidden"],
+        latency_ms=3,
+        rejected_fields=["tier", "company_name", "message"],
+    )
+    run = await repo.get_run(run_id)
+    assert run is not None and run.status == "rejected"
+    assert run.lead_input == {"rejected": True, "fields": ["company_name", "message", "tier"]}
+    assert run.tier is None and run.result is None

@@ -307,3 +307,25 @@ def test_strict_schema_requires_all_fields_and_forbids_extras() -> None:
     assert "title" not in schema and "default" not in json.dumps(schema)
     # Não altera o schema original do Pydantic (cópia profunda).
     assert "title" in Extraction.model_json_schema()
+
+
+def test_strict_schema_flattens_optional_fields_without_anyof() -> None:
+    """A Groq rejeita `anyOf: [X, null]` sem discriminador (achado da execução real da T14)."""
+    from app.graph.nodes.extraction import Extraction
+
+    schema = strict_json_schema(Extraction)
+    assert "anyOf" not in json.dumps(schema)
+    uf = schema["properties"]["uf"]
+    assert uf["type"] == ["string", "null"]
+    assert uf["enum"][-1] is None and "SP" in uf["enum"]
+    assert schema["properties"]["employee_count"]["type"] == ["integer", "null"]
+    assert schema["properties"]["employee_count"]["minimum"] == 1
+    assert schema["properties"]["cnae"]["type"] == ["string", "null"]
+    assert schema["properties"]["based_in_brazil"]["type"] == ["boolean", "null"]
+    # O schema estrito continua aceitando uma saída válida com nulos.
+    Extraction.model_validate(
+        {k: None for k in ("cnae", "uf", "based_in_brazil", "employee_count", "fleet_size")}
+        | {"sector": "unknown", "sector_certainty": "low", "size_certainty": "low",
+           "company_kind": "unknown", "area": "other", "seniority": "unknown",
+           "role_certainty": "low", "intents": [], "flags": [], "evidence_ids": []}
+    )  # fmt: skip

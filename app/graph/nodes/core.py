@@ -1,11 +1,12 @@
 """Nós determinísticos (sem LLM): validação da entrada, score e montagem do resultado."""
 
+import time
 from decimal import Decimal
 from typing import Any
 
 from pydantic import ValidationError
 
-from app.audit.repository import StepRecord
+from app.audit.repository import FinalStatus, StepRecord
 from app.graph.state import PROMPT_VERSION, QualificationState
 from app.ontology.models import LeadProfile
 from app.ontology.scoring import compute_score as score_profile
@@ -26,12 +27,14 @@ def validate_input(state: QualificationState) -> dict[str, Any]:
         ]
         return {
             "prompt_version": PROMPT_VERSION,
+            "started_at": time.time(),
             "status": "rejected",
             "errors": [f"entrada inválida: {d}" for d in details],
             "steps": [StepRecord(node="validate_input", output={"valid": False})],
         }
     return {
         "prompt_version": PROMPT_VERSION,
+        "started_at": time.time(),
         "status": "running",
         "lead": lead,
         "steps": [StepRecord(node="validate_input", output={"valid": True})],
@@ -40,6 +43,10 @@ def validate_input(state: QualificationState) -> dict[str, Any]:
 
 def route_after_validation(state: QualificationState) -> str:
     return "reject" if state.get("status") == "rejected" else "continue"
+
+
+def route_unless_failed(state: QualificationState) -> str:
+    return "fail" if state.get("status") == "failed" else "continue"
 
 
 def compute_score(state: QualificationState) -> dict[str, Any]:
@@ -80,3 +87,17 @@ def build_result(state: QualificationState) -> QualificationResult:
         prompt_version=state.get("prompt_version", PROMPT_VERSION),
         cost_usd=float(cost),
     )
+
+
+def finalize(state: QualificationState) -> tuple[FinalStatus, QualificationResult | None]:
+    """Status final e resultado. Rejeitado ou falho não tem resultado (nem tier)."""
+    status = state.get("status", "failed")
+    if status in {"rejected", "failed"} or "score" not in state:
+        return ("rejected" if status == "rejected" else "failed"), None
+    result = build_result(state)
+    return ("needs_review" if result.needs_human_review else "completed"), result
+
+
+def latency_ms(state: QualificationState) -> int:
+    started = state.get("started_at")
+    return max(0, round((time.time() - started) * 1000)) if started else 0

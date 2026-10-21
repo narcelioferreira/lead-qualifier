@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -22,6 +22,8 @@ from app.routing.cost import Usage
 from app.schemas import LeadInput, QualificationResult
 
 MAX_ERRORS = 20
+
+FinalStatus = Literal["completed", "failed", "needs_review", "rejected"]
 MAX_ERROR_CHARS = 500
 
 
@@ -130,22 +132,7 @@ class AuditRepository:
     async def add_step(self, run_id: uuid.UUID, step: StepRecord) -> None:
         async with self._sessions.begin() as session:
             await self._running(session, run_id)
-            session.add(
-                AgentStep(
-                    run_id=run_id,
-                    node=step.node,
-                    model_key=step.model_key,
-                    model=step.model,
-                    route_reason=step.route_reason,
-                    input_tokens=step.usage.input_tokens,
-                    cached_input_tokens=step.usage.cached_input_tokens,
-                    output_tokens=step.usage.output_tokens,
-                    cost_usd=step.cost_usd,
-                    latency_ms=step.latency_ms,
-                    output=step.output,
-                    sources=step.sources,
-                )
-            )
+            session.add(_step_row(run_id, step))
 
     async def complete_run(
         self,
@@ -159,11 +146,7 @@ class AuditRepository:
         async with self._sessions.begin() as session:
             run = await self._running(session, run_id)
             run.status = "needs_review" if result.needs_human_review else "completed"
-            run.tier = result.tier.value
-            run.score = Decimal(str(result.score))
-            run.confidence = Decimal(str(result.confidence))
-            run.next_step = result.next_step.model_dump(mode="json") if result.next_step else None
-            run.result = result.model_dump(mode="json")
+            _apply_result(run, result)
             run.crm_ids = crm_ids
             await self._close(session, run, latency_ms)
 
@@ -171,6 +154,44 @@ class AuditRepository:
         async with self._sessions.begin() as session:
             run = await self._running(session, run_id)
             run.status = "failed"
+            run.errors = _clean_errors(errors)
+            await self._close(session, run, latency_ms)
+
+    async def record_run(
+        self,
+        *,
+        run_id: uuid.UUID,
+        prompt_version: str,
+        lead: LeadInput | None,
+        status: FinalStatus,
+        steps: Sequence[StepRecord],
+        result: QualificationResult | None = None,
+        errors: Sequence[str] = (),
+        latency_ms: int,
+        rejected_fields: Sequence[str] = (),
+    ) -> None:
+        """Grava uma execução completa numa transação (usado pelo nó `audit_log`).
+
+        Lead rejeitado não tem `LeadInput` válido: grava-se só o nome dos campos enviados,
+        nunca os valores (que podem ser lixo, injeção ou dado pessoal).
+        """
+        if result is not None and result.run_id != str(run_id):
+            raise AuditError("run_id do resultado não confere com a execução")
+        lead_input = (
+            audit_lead_input(lead)
+            if lead is not None
+            else {"rejected": True, "fields": sorted(rejected_fields)[:MAX_ERRORS]}
+        )
+        async with self._sessions.begin() as session:
+            run = AgentRun(
+                run_id=run_id, prompt_version=prompt_version, lead_input=lead_input, status=status
+            )
+            session.add(run)
+            for step in steps:
+                session.add(_step_row(run_id, step))
+            await session.flush()
+            if result is not None:
+                _apply_result(run, result)
             run.errors = _clean_errors(errors)
             await self._close(session, run, latency_ms)
 
@@ -224,6 +245,31 @@ class AuditRepository:
         run.cost_usd = Decimal(total or 0)
         run.latency_ms = latency_ms
         run.finished_at = func.now()
+
+
+def _step_row(run_id: uuid.UUID, step: StepRecord) -> AgentStep:
+    return AgentStep(
+        run_id=run_id,
+        node=step.node,
+        model_key=step.model_key,
+        model=step.model,
+        route_reason=step.route_reason,
+        input_tokens=step.usage.input_tokens,
+        cached_input_tokens=step.usage.cached_input_tokens,
+        output_tokens=step.usage.output_tokens,
+        cost_usd=step.cost_usd,
+        latency_ms=step.latency_ms,
+        output=step.output,
+        sources=step.sources,
+    )
+
+
+def _apply_result(run: AgentRun, result: QualificationResult) -> None:
+    run.tier = result.tier.value
+    run.score = Decimal(str(result.score))
+    run.confidence = Decimal(str(result.confidence))
+    run.next_step = result.next_step.model_dump(mode="json") if result.next_step else None
+    run.result = result.model_dump(mode="json")
 
 
 def _step_view(step: AgentStep) -> StepView:
