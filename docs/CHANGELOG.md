@@ -182,3 +182,25 @@
   - a saída é sempre validada por schema, e campos extras são rejeitados, então um `"tier": "A"` injetado não passa;
   - timeouts explícitos;
   - a URL do Ollama vem só da configuração.
+
+## T10 (revisão): OpenAI substituída pela Groq
+- **Decisão do autor:** usar uma API gratuita, por ser um projeto acadêmico. A Groq tem plano gratuito e API compatível com OpenAI. O escopo do `CLAUDE.md` e a arquitetura foram atualizados.
+- **Modelos** (`models.yaml`): são os únicos modelos de **produção** da Groq com structured output estrito (`strict: true`). Os de preview ficaram de fora porque podem ser descontinuados sem aviso.
+  - **mini:** `openai/gpt-oss-20b` (US$ 0,075 / 0,037 / 0,30 por 1M);
+  - **maior:** `openai/gpt-oss-120b` (US$ 0,15 / 0,075 / 0,60).
+  - Os preços de lista foram conferidos em 21/10/2026 e são mantidos para reportar o **custo equivalente** por lead. No plano gratuito o custo real é zero.
+- **Embeddings:** a Groq não tem modelo de embeddings, então o RAG usará `nomic-embed-text:v1.5` no Ollama (local e gratuito).
+- **Versão fixada:** a regra de "snapshot datado" da OpenAI deu lugar a outra. Os modelos da Groq são de pesos abertos (o ID aponta para pesos fixos), e o catálogo rejeita nomes com `latest` ou `preview` e modelos Ollama sem tag.
+- `app/llm/groq_client.py` substitui o `openai_client.py`:
+  - usa Chat Completions com `response_format: json_schema` estrito;
+  - `include_reasoning: false`, para o raciocínio do modelo não ser devolvido nem guardado;
+  - o erro `json_validate_failed` da Groq vira `LLMOutputError`, para o nó repetir com outro prompt (T14).
+- **Retry com `retry-after`:** o plano gratuito tem limites baixos (8K tokens/min e 200K/dia por modelo, no plano base). Um 429 agora espera o tempo pedido pela Groq (teto de 60 s por tentativa) e, sem o header, usa backoff exponencial.
+- **Consequência para a avaliação (T15/T16):** com 200K tokens/dia, uma rodada de 50 leads pode levar mais de um dia. O runner precisa de throttling e de retomada do ponto onde parou.
+- **Configuração:** `OPENAI_API_KEY` → `GROQ_API_KEY` (`config.py`, `.env.example`, `03-contratos.md`).
+- **Teste:** 214 testes, `make check` verde. Os custos foram recalculados à mão (mini US$ 0,001124 e maior US$ 0,00225 para o uso de referência). Testes novos:
+  - o `retry-after` é respeitado e limitado a 60 s;
+  - `retry-after` em formato de data cai no backoff;
+  - `json_validate_failed`;
+  - recusa, resposta truncada e resposta vazia no formato Chat Completions.
+- **Pendente:** teste de integração real com a `GROQ_API_KEY` no `.env`.

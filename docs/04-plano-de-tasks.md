@@ -13,11 +13,11 @@ A arquitetura definitiva já foi aprovada e está em `lead-qualifier/docs/00-arq
 
 Regras gerais:
 - Testes unitários e de grafo **nunca** chamam APIs reais. Usam mocks ou fixtures, rodam no CI sem chaves e não custam nada.
-- Testes de integração reais (OpenAI, Tavily, HubSpot) ficam marcados com `@pytest.mark.integration` e só rodam com as chaves no `.env`.
+- Testes de integração reais (Groq, Tavily, HubSpot) ficam marcados com `@pytest.mark.integration` e só rodam com as chaves no `.env`.
 - Docker: se não estiver disponível no ambiente de desenvolvimento, os testes com `docker compose` rodam na máquina local.
 
 ## Pré-requisitos (contas, todas com plano gratuito ou de teste)
-OpenAI API key · Tavily API key · HubSpot developer test account + Private App token · Ollama (local ou via container) · GitHub (repositório + Actions) · LangSmith (opcional).
+Groq API key (plano gratuito) · Tavily API key · HubSpot developer test account + Private App token · Ollama (local ou via container) · GitHub (repositório + Actions) · LangSmith (opcional).
 
 ---
 
@@ -77,7 +77,7 @@ OpenAI API key · Tavily API key · HubSpot developer test account + Private App
 ## Fase C: Infraestrutura de LLM
 
 ### T10: Clientes LLM e contabilização de custo
-- **Fazer:** `app/llm/` com o cliente OpenAI (structured output), cliente Ollama, `models.yaml` (modelos com versão fixada e preço) e `app/routing/cost.py`, que converte uso em US$.
+- **Fazer:** `app/llm/` com o cliente Groq (structured output), cliente Ollama, `models.yaml` (modelos com versão fixada e preço) e `app/routing/cost.py`, que converte uso em US$.
 - **Testar:** testes unitários com mocks (`respx`) para o parse da resposta, retry em 429/5xx e cálculo de custo conferido à mão. Teste de integração `-m integration` com uma chamada real mínima a cada provedor.
 - **Aceite:** testes unitários verdes e integração verde com as chaves configuradas.
 
@@ -112,7 +112,7 @@ OpenAI API key · Tavily API key · HubSpot developer test account + Private App
 
 ### T16: Baselines
 - **Fazer:** a configuração `baseline` (prompt único, sem ontologia) e a configuração `mvp` (ontologia + score). Rodar ambas no **split dev** e ajustar os prompts só com o dev. Depois rodar uma única vez no teste.
-- **Testar:** os relatórios são gerados sem erro e os custos batem com o painel da OpenAI (diferença abaixo de 5%).
+- **Testar:** os relatórios são gerados sem erro e os tokens batem com o painel de uso da Groq (diferença abaixo de 5%); o custo é reportado pelo preço de lista, já que o plano gratuito não cobra.
 - **Aceite:** `evals/reports/01-baseline.md` e `02-mvp.md` publicados no repositório. 📸 primeiro número real.
 
 ---

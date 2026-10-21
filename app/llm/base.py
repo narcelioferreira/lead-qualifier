@@ -4,6 +4,7 @@ Os clientes só devolvem saída **validada** contra um modelo Pydantic (structur
 livre do LLM nunca chega ao grafo sem passar por esse schema.
 """
 
+import asyncio
 import copy
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, ValidationError
 from tenacity import (
     AsyncRetrying,
+    RetryCallState,
     RetryError,
     retry_if_exception,
     stop_after_attempt,
@@ -25,6 +27,10 @@ from app.routing.cost import ModelSpec, Usage
 
 MAX_ATTEMPTS = 3
 DEFAULT_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+# Teto de espera por tentativa quando o provedor manda `retry-after` (s).
+MAX_RETRY_AFTER = 60.0
+# Código de erro da Groq quando a saída gerada não bate com o schema.
+_SCHEMA_FAILURE = "json_validate_failed"
 # Trecho máximo da mensagem de erro do provedor guardado na exceção (sem corpo inteiro).
 _ERROR_SNIPPET = 200
 
@@ -64,13 +70,38 @@ class LLMOutputError(LLMError):
 
 
 class _RetryableStatusError(Exception):
-    def __init__(self, status: int, detail: str) -> None:
+    def __init__(self, status: int, detail: str, retry_after: float | None = None) -> None:
         super().__init__(f"HTTP {status}: {detail}")
         self.status = status
+        self.retry_after = retry_after
 
 
 def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, _RetryableStatusError | httpx.TimeoutException | httpx.TransportError)
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    """Segundos do header `retry-after` (a Groq envia em todo 429). Datas HTTP são ignoradas."""
+    try:
+        value = float(response.headers.get("retry-after", ""))
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+class wait_retry_after(wait_base):  # noqa: N801 - segue a convenção de nomes do tenacity
+    """Espera o `retry-after` do provedor (com teto); sem o header, usa o backoff padrão."""
+
+    def __init__(self, fallback: wait_base, cap: float = MAX_RETRY_AFTER) -> None:
+        self.fallback = fallback
+        self.cap = cap
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        outcome = retry_state.outcome
+        exc = outcome.exception() if outcome else None
+        if isinstance(exc, _RetryableStatusError) and exc.retry_after is not None:
+            return min(exc.retry_after, self.cap)
+        return float(self.fallback(retry_state))
 
 
 def error_detail(response: httpx.Response) -> str:
@@ -93,16 +124,19 @@ async def send_with_retry(
     send: Callable[[], Awaitable[httpx.Response]],
     provider: str,
     wait: wait_base | None = None,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> tuple[httpx.Response, int]:
-    """Envia com retry exponencial em 429, 5xx, timeout e erro de rede.
+    """Envia com retry em 429, 5xx, timeout e erro de rede.
 
-    Devolve a resposta 2xx e o número de tentativas. Outros 4xx falham na hora.
+    Respeita o `retry-after` do 429 (limites do plano gratuito) e, sem ele, usa backoff
+    exponencial. Devolve a resposta 2xx e o número de tentativas. Outros 4xx falham na hora.
     """
     retrying = AsyncRetrying(
         stop=stop_after_attempt(MAX_ATTEMPTS),
-        wait=wait or wait_exponential(multiplier=0.5, max=8),
+        wait=wait or wait_retry_after(wait_exponential(multiplier=0.5, max=8)),
         retry=retry_if_exception(_is_retryable),
         reraise=False,
+        sleep=sleep or asyncio.sleep,
     )
     attempts = 0
     try:
@@ -110,12 +144,16 @@ async def send_with_retry(
             with attempt:
                 attempts += 1
                 response = await send()
-                if response.status_code == 429 or response.status_code >= 500:
-                    raise _RetryableStatusError(response.status_code, error_detail(response))
-                if response.is_error:
-                    raise LLMRequestError(
-                        f"{provider}: HTTP {response.status_code}: {error_detail(response)}"
+                status = response.status_code
+                if status == 429 or status >= 500:
+                    raise _RetryableStatusError(
+                        status, error_detail(response), _retry_after(response)
                     )
+                if response.is_error:
+                    detail = error_detail(response)
+                    if _SCHEMA_FAILURE in detail:
+                        raise LLMOutputError(f"{provider}: saída fora do schema ({detail})")
+                    raise LLMRequestError(f"{provider}: HTTP {status}: {detail}")
                 return response, attempts
     except RetryError as exc:
         cause = exc.last_attempt.exception()

@@ -1,29 +1,26 @@
-# Catálogo de modelos: versão fixada e preço por 1M de tokens (US$).
-# Preços conferidos em 2026-10-21 em https://developers.openai.com/api/docs/pricing (tier Standard).
-# Modelos de chat da OpenAI usam sempre snapshot datado: um alias como "gpt-5.4-mini" pode mudar
-# de versão sem aviso e invalidar a comparação entre avaliações.
+# Catálogo de modelos e preço de lista por 1M de tokens (US$).
+# Preços conferidos em 2026-10-21 em https://console.groq.com/docs/model/<modelo>.
+# No plano gratuito da Groq o custo real é zero; o preço de lista é mantido para reportar o
+# custo equivalente por lead na avaliação.
+# Os modelos da Groq são de pesos abertos: o ID aponta para pesos fixos, sem alias móvel.
+# Só entram modelos de produção com structured output estrito (preview pode sumir sem aviso).
 version: 1
 prices_checked_at: 2026-10-21
 models:
-  openai-mini:
-    provider: openai
+  groq-mini:
+    provider: groq
     kind: chat
-    model: gpt-5.4-mini-2026-03-17
+    model: openai/gpt-oss-20b
     reasoning_effort: low
     max_output_tokens: 4000
-    price_per_1m: {input: 0.75, cached_input: 0.075, output: 4.50}
-  openai-large:
-    provider: openai
+    price_per_1m: {input: 0.075, cached_input: 0.037, output: 0.30}
+  groq-large:
+    provider: groq
     kind: chat
-    model: gpt-5.4-2026-03-05
+    model: openai/gpt-oss-120b
     reasoning_effort: medium
     max_output_tokens: 8000
-    price_per_1m: {input: 2.50, cached_input: 0.25, output: 15.00}
-  openai-embedding:
-    provider: openai
-    kind: embedding
-    model: text-embedding-3-small
-    price_per_1m: {input: 0.02, cached_input: 0.02, output: 0}
+    price_per_1m: {input: 0.15, cached_input: 0.075, output: 0.60}
   # SLM local (guardrail e normalização de cargo). Provisório: o modelo definitivo é escolhido
   # por benchmark no subconjunto do guardrail (T28). Custo de API zero; o custo é de infra.
   ollama-slm:
@@ -31,4 +28,10 @@ models:
     kind: chat
     model: qwen3:4b
     max_output_tokens: 1000
+    price_per_1m: {input: 0, cached_input: 0, output: 0}
+  # Embeddings locais para o RAG (a Groq não oferece modelo de embeddings).
+  ollama-embedding:
+    provider: ollama
+    kind: embedding
+    model: nomic-embed-text:v1.5
     price_per_1m: {input: 0, cached_input: 0, output: 0}

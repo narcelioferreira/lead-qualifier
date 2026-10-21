@@ -13,7 +13,7 @@ Agente em **LangGraph** que qualifica leads B2B para a **FrotaSense** (SaaS gest
 - [Plano de tasks](docs/04-plano-de-tasks.md)
 - [Fontes do dataset](docs/05-fontes-do-dataset.md)
 
-> **Dataset de avaliação:** as empresas são reais e públicas; cargos, mensagens e e-mails são fictícios. As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (OpenAI), para evitar o viés de o modelo avaliar o próprio texto.
+> **Dataset de avaliação:** as empresas são reais e públicas; cargos, mensagens e e-mails são fictícios. As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (gpt-oss, via Groq), para evitar o viés de o modelo avaliar o próprio texto.
 
 ## Desenvolvimento
 ```bash

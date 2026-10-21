@@ -39,7 +39,7 @@ Campos extras são **rejeitados** (`extra="forbid"`). Isso impede, por exemplo, 
 |---|---|---|
 | `API_KEY` | ✔ | Mínimo de 32 caracteres; o valor de exemplo do `.env.example` é rejeitado |
 | `DATABASE_URL` | ✔ | `SecretStr` (contém senha) |
-| `OPENAI_API_KEY`, `TAVILY_API_KEY`, `HUBSPOT_TOKEN`, `LANGSMITH_API_KEY` | — | `SecretStr`; obrigatórias apenas nas tasks que as usam |
+| `GROQ_API_KEY`, `TAVILY_API_KEY`, `HUBSPOT_TOKEN`, `LANGSMITH_API_KEY` | — | `SecretStr`; obrigatórias apenas nas tasks que as usam |
 | `APP_ENV` | — | `dev`, `test` ou `prod` |
 | `MAX_MESSAGE_CHARS` | — | 100–20.000 (padrão 4.000) |
 

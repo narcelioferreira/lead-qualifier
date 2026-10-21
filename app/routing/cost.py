@@ -17,8 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 MODELS_PATH = Path(__file__).parent / "models.yaml"
 ONE_MILLION = Decimal(1_000_000)
 
-# Snapshot datado da OpenAI, ex.: gpt-5.4-mini-2026-03-17.
-_DATED_SNAPSHOT = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+# Nomes que apontam para versões móveis e quebram a reprodutibilidade da avaliação.
+_FLOATING = re.compile(r"(latest|preview)", re.IGNORECASE)
 
 _STRICT = ConfigDict(extra="forbid", frozen=True)
 
@@ -47,24 +47,22 @@ class ModelSpec(BaseModel):
     model_config = _STRICT
 
     key: str
-    provider: Literal["openai", "ollama"]
+    provider: Literal["groq", "ollama"]
     kind: Literal["chat", "embedding"]
     model: str = Field(min_length=1)
-    reasoning_effort: Literal["none", "low", "medium", "high", "xhigh"] | None = None
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
     max_output_tokens: int | None = Field(default=None, ge=1, le=128_000)
     price_per_1m: Price
 
     @model_validator(mode="after")
     def _pinned_version(self) -> Self:
-        is_openai_chat = self.provider == "openai" and self.kind == "chat"
-        if is_openai_chat and not _DATED_SNAPSHOT.search(self.model):
-            raise ValueError(f"{self.key}: use um snapshot datado, não o alias {self.model!r}")
+        if _FLOATING.search(self.model):
+            raise ValueError(f"{self.key}: versão móvel não é permitida ({self.model!r})")
         if self.provider == "ollama":
-            tag = self.model.partition(":")[2]
-            if not tag or tag == "latest":
+            if not self.model.partition(":")[2]:
                 raise ValueError(f"{self.key}: fixe a tag do modelo Ollama (ex.: qwen3:4b)")
             if self.reasoning_effort is not None:
-                raise ValueError(f"{self.key}: reasoning_effort só existe na OpenAI")
+                raise ValueError(f"{self.key}: reasoning_effort não se aplica ao Ollama")
         return self
 
 

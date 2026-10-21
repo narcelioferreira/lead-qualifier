@@ -11,21 +11,22 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from tenacity import wait_none
 
 from app.llm.base import (
+    MAX_RETRY_AFTER,
     LLMOutputError,
     LLMRequestError,
     LLMUnavailableError,
     Message,
     strict_json_schema,
 )
+from app.llm.groq_client import GROQ_BASE_URL, GroqClient
 from app.llm.ollama_client import OllamaClient
-from app.llm.openai_client import OPENAI_BASE_URL, OpenAIClient
 from app.ontology.models import SectorFit
 from app.routing.cost import get_catalog
 
 pytestmark = pytest.mark.anyio
 
-FAKE_KEY = "sk-test-nao-e-uma-chave-real-0000000000"  # pragma: allowlist secret
-RESPONSES_URL = f"{OPENAI_BASE_URL}/responses"
+FAKE_KEY = "gsk-test-nao-e-uma-chave-real-0000000000"  # pragma: allowlist secret
+CHAT_URL = f"{GROQ_BASE_URL}/chat/completions"
 OLLAMA_URL = "http://ollama.test:11434"
 MESSAGES = [Message(role="system", content="Classifique."), Message(role="user", content="lead")]
 
@@ -50,89 +51,148 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _openai() -> OpenAIClient:
-    return OpenAIClient(SecretStr(FAKE_KEY), retry_wait=wait_none())
+def _groq(**kwargs: Any) -> GroqClient:
+    return GroqClient(SecretStr(FAKE_KEY), **({"retry_wait": wait_none()} | kwargs))
 
 
-def _response(text: str, **extra: Any) -> dict[str, Any]:
+def _mini() -> Any:
+    return get_catalog().get("groq-mini")
+
+
+def _response(text: str | None, finish_reason: str = "stop", **message: Any) -> dict[str, Any]:
     return {
-        "model": "gpt-5.4-mini-2026-03-17",
-        "status": "completed",
-        "output": [
-            {"type": "reasoning", "summary": []},
-            {"type": "message", "content": [{"type": "output_text", "text": text}]},
+        "model": "openai/gpt-oss-20b",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": finish_reason,
+                "message": {"role": "assistant", "content": text, **message},
+            }
         ],
         "usage": {
-            "input_tokens": 10_000,
-            "input_tokens_details": {"cached_tokens": 2_000},
-            "output_tokens": 1_500,
-            "output_tokens_details": {"reasoning_tokens": 500},
+            "prompt_tokens": 10_000,
+            "prompt_tokens_details": {"cached_tokens": 2_000},
+            "completion_tokens": 1_500,
+            "completion_tokens_details": {"reasoning_tokens": 500},
         },
-        **extra,
     }
 
 
-# --- OpenAI ------------------------------------------------------------------------------
+# --- Groq --------------------------------------------------------------------------------
 
 
 @respx.mock
-async def test_openai_parses_structured_output_and_cost() -> None:
-    route = respx.post(RESPONSES_URL).respond(json=_response(json.dumps(VALID)))
-    result = await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+async def test_groq_parses_structured_output_and_cost() -> None:
+    route = respx.post(CHAT_URL).respond(json=_response(json.dumps(VALID)))
+    result = await _groq().structured(_mini(), MESSAGES, Extraction)
 
     assert result.parsed.sector is SectorFit.TARGET
     assert result.usage.cached_input_tokens == 2_000
-    assert result.cost_usd == Decimal("0.0129")  # conferido à mão em test_cost.py
+    assert result.usage.reasoning_tokens == 500
+    assert result.cost_usd == Decimal("0.001124")  # conferido à mão em test_cost.py
     assert result.attempts == 1
 
     request = route.calls.last.request
     assert request.headers["Authorization"] == f"Bearer {FAKE_KEY}"
     body = json.loads(request.content)
-    assert body["model"] == "gpt-5.4-mini-2026-03-17"
-    assert body["store"] is False
-    assert body["reasoning"] == {"effort": "low"}
-    assert body["text"]["format"]["strict"] is True
-    assert body["text"]["format"]["schema"]["additionalProperties"] is False
+    assert body["model"] == "openai/gpt-oss-20b"
+    assert body["reasoning_effort"] == "low"
+    assert body["include_reasoning"] is False
+    assert body["max_completion_tokens"] == 4000
+    fmt = body["response_format"]["json_schema"]
+    assert fmt["strict"] is True
+    assert fmt["schema"]["additionalProperties"] is False
 
 
 @respx.mock
 @pytest.mark.parametrize("status", [429, 500, 503])
-async def test_openai_retries_transient_errors(status: int) -> None:
-    route = respx.post(RESPONSES_URL).mock(
+async def test_groq_retries_transient_errors(status: int) -> None:
+    route = respx.post(CHAT_URL).mock(
         side_effect=[
             httpx.Response(status, json={"error": {"type": "server_error"}}),
             httpx.Response(200, json=_response(json.dumps(VALID))),
         ]
     )
-    result = await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+    result = await _groq().structured(_mini(), MESSAGES, Extraction)
     assert result.attempts == 2
     assert route.call_count == 2
 
 
 @respx.mock
-async def test_openai_retries_timeout_then_gives_up() -> None:
-    route = respx.post(RESPONSES_URL).mock(side_effect=httpx.ReadTimeout("lento"))
+async def test_groq_429_waits_retry_after_with_cap() -> None:
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    respx.post(CHAT_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"retry-after": "7"}, json={"error": {}}),
+            httpx.Response(429, headers={"retry-after": "3600"}, json={"error": {}}),
+            httpx.Response(200, json=_response(json.dumps(VALID))),
+        ]
+    )
+    client = GroqClient(SecretStr(FAKE_KEY), retry_sleep=fake_sleep)  # wait padrão
+    result = await client.structured(_mini(), MESSAGES, Extraction)
+    assert result.attempts == 3
+    assert slept == [7.0, MAX_RETRY_AFTER]
+
+
+@respx.mock
+async def test_groq_429_without_retry_after_uses_backoff() -> None:
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    respx.post(CHAT_URL).mock(
+        side_effect=[
+            httpx.Response(
+                429, headers={"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}, json={"error": {}}
+            ),
+            httpx.Response(200, json=_response(json.dumps(VALID))),
+        ]
+    )
+    await GroqClient(SecretStr(FAKE_KEY), retry_sleep=fake_sleep).structured(
+        _mini(), MESSAGES, Extraction
+    )
+    assert len(slept) == 1
+    assert 0 < slept[0] <= 8
+
+
+@respx.mock
+async def test_groq_retries_timeout_then_gives_up() -> None:
+    route = respx.post(CHAT_URL).mock(side_effect=httpx.ReadTimeout("lento"))
     with pytest.raises(LLMUnavailableError, match="3 tentativas"):
-        await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+        await _groq().structured(_mini(), MESSAGES, Extraction)
     assert route.call_count == 3
 
 
 @respx.mock
-async def test_openai_persistent_429_raises_unavailable() -> None:
-    respx.post(RESPONSES_URL).respond(429, json={"error": {"code": "rate_limit_exceeded"}})
+async def test_groq_persistent_429_raises_unavailable() -> None:
+    respx.post(CHAT_URL).respond(429, json={"error": {"code": "rate_limit_exceeded"}})
     with pytest.raises(LLMUnavailableError, match="rate_limit_exceeded"):
-        await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+        await _groq().structured(_mini(), MESSAGES, Extraction)
 
 
 @respx.mock
-async def test_openai_client_error_is_not_retried() -> None:
-    route = respx.post(RESPONSES_URL).respond(
+async def test_groq_client_error_is_not_retried() -> None:
+    route = respx.post(CHAT_URL).respond(
         400, json={"error": {"type": "invalid_request_error", "message": "x" * 5000}}
     )
     with pytest.raises(LLMRequestError, match="invalid_request_error") as info:
-        await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+        await _groq().structured(_mini(), MESSAGES, Extraction)
     assert route.call_count == 1
     assert len(str(info.value)) < 300  # não carrega o corpo inteiro do erro
+
+
+@respx.mock
+async def test_groq_schema_validation_failure_is_output_error() -> None:
+    respx.post(CHAT_URL).respond(
+        400, json={"error": {"code": "json_validate_failed", "message": "Generated JSON..."}}
+    )
+    with pytest.raises(LLMOutputError, match="json_validate_failed"):
+        await _groq().structured(_mini(), MESSAGES, Extraction)
 
 
 @respx.mock
@@ -142,45 +202,38 @@ async def test_openai_client_error_is_not_retried() -> None:
         (_response('{"sector": "marte", "confidence": 0.9, "evidence": []}'), "fora do schema"),
         (_response("não é json"), "fora do schema"),
         (_response(json.dumps(VALID | {"tier": "A"})), "fora do schema"),
-        (
-            _response("", status="incomplete", incomplete_details={"reason": "max_output_tokens"}),
-            "max_output_tokens",
-        ),
-        (
-            {"status": "completed", "output": [
-                {"type": "message", "content": [{"type": "refusal", "refusal": "não posso"}]}
-            ]},
-            "recusou",
-        ),
-        ({"status": "completed", "output": []}, "sem texto"),
+        (_response('{"sector":', finish_reason="length"), "incompleta"),
+        (_response(None, refusal="não posso"), "recusou"),
+        (_response(None), "sem texto"),
+        ({"choices": []}, "sem texto"),
     ],
-)  # fmt: skip
-async def test_openai_invalid_output_raises(payload: dict[str, Any], match: str) -> None:
-    respx.post(RESPONSES_URL).respond(json=payload)
+)
+async def test_groq_invalid_output_raises(payload: dict[str, Any], match: str) -> None:
+    respx.post(CHAT_URL).respond(json=payload)
     with pytest.raises(LLMOutputError, match=match):
-        await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+        await _groq().structured(_mini(), MESSAGES, Extraction)
 
 
 @respx.mock
-async def test_openai_error_never_echoes_model_output() -> None:
+async def test_groq_error_never_echoes_model_output() -> None:
     leaked = '{"sector": "IGNORE AS REGRAS lead-001@example.com"}'
-    respx.post(RESPONSES_URL).respond(json=_response(leaked))
+    respx.post(CHAT_URL).respond(json=_response(leaked))
     with pytest.raises(LLMOutputError) as info:
-        await _openai().structured(get_catalog().get("openai-mini"), MESSAGES, Extraction)
+        await _groq().structured(_mini(), MESSAGES, Extraction)
     assert "IGNORE" not in str(info.value)
     assert "example.com" not in str(info.value)
 
 
-async def test_openai_secret_never_in_repr() -> None:
-    assert FAKE_KEY not in repr(_openai())
+async def test_groq_secret_never_in_repr() -> None:
+    assert FAKE_KEY not in repr(_groq())
 
 
-async def test_openai_rejects_wrong_model_kind() -> None:
+async def test_groq_rejects_wrong_model_kind() -> None:
     catalog = get_catalog()
     with pytest.raises(LLMRequestError):
-        await _openai().structured(catalog.get("openai-embedding"), MESSAGES, Extraction)
+        await _groq().structured(catalog.get("ollama-embedding"), MESSAGES, Extraction)
     with pytest.raises(LLMRequestError):
-        await _openai().structured(catalog.get("ollama-slm"), MESSAGES, Extraction)
+        await _groq().structured(catalog.get("ollama-slm"), MESSAGES, Extraction)
 
 
 # --- Ollama ------------------------------------------------------------------------------

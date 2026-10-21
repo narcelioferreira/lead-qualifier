@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # Segredos: SecretStr evita que apareçam em logs, repr e tracebacks.
     api_key: SecretStr
-    openai_api_key: SecretStr | None = None
+    groq_api_key: SecretStr | None = None
     tavily_api_key: SecretStr | None = None
     hubspot_token: SecretStr | None = None
     langsmith_api_key: SecretStr | None = None

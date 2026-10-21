@@ -1,7 +1,7 @@
 """Cliente do Ollama (SLM local) com structured output via `format` = JSON Schema."""
 
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 import httpx
@@ -30,11 +30,13 @@ class OllamaClient:
         *,
         timeout: httpx.Timeout = DEFAULT_TIMEOUT,
         retry_wait: wait_base | None = None,
+        retry_sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         # A URL vem da configuração (OLLAMA_BASE_URL), nunca do lead.
         self._base_url = str(base_url).rstrip("/")
         self._timeout = timeout
         self._retry_wait = retry_wait
+        self._retry_sleep = retry_sleep
 
     def __repr__(self) -> str:
         return f"OllamaClient(base_url={self._base_url!r})"
@@ -62,6 +64,7 @@ class OllamaClient:
                 lambda: client.post(f"{self._base_url}/api/chat", json=body),
                 PROVIDER,
                 self._retry_wait,
+                self._retry_sleep,
             )
         latency_ms = (time.perf_counter() - start) * 1000
 

@@ -22,7 +22,7 @@ Projeto acadêmico com padrão profissional, que será publicado no LinkedIn. A 
 - `docs/CHANGELOG.md`: o que foi feito em cada task, decisões e problemas corrigidos
 
 ## Escopo fechado
-Inclui: Python 3.12, uv, LangGraph, OpenAI API, Ollama (SLM), Postgres + pgvector, MCP, FastAPI, Docker e HubSpot.
+Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenAI na T10), Ollama (SLM e embeddings), Postgres + pgvector, MCP, FastAPI, Docker e HubSpot.
 **Fora do escopo:** PydanticAI, Langflow e Deep Agents. Não introduza essas ferramentas.
 
 ## Ciclo obrigatório de cada task
@@ -46,7 +46,7 @@ Inclui: Python 3.12, uv, LangGraph, OpenAI API, Ollama (SLM), Postgres + pgvecto
 ## Status atual
 - ✅ T01–T08: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico e dataset de 50 leads (`evals/dataset.jsonl`). São 125 testes.
 - ✅ T09: rotulagem humana concluída (`evals/labels.jsonl`, 10 A · 14 B · 12 C · 14 D, anotador único).
-- 🟡 T10: clientes OpenAI (Responses API) e Ollama, `models.yaml` com snapshots datados e custo em `Decimal`. Testes unitários verdes (209 no total). **Falta o teste de integração real** (`uv run pytest -m integration`), que precisa de `.env` com `OPENAI_API_KEY` e do Ollama com `qwen3:4b`.
+- 🟡 T10: clientes **Groq** (gpt-oss-20b mini, gpt-oss-120b maior) e Ollama, `models.yaml` e custo em `Decimal`. Testes unitários verdes (214). **Falta o teste de integração real** (`uv run pytest -m integration`), que precisa de `.env` com `GROQ_API_KEY` e do Ollama com `qwen3:4b`. Plano gratuito: 8K tokens/min e 200K tokens/dia por modelo, então as avaliações precisam de throttling (T15).
 - ⏭️ Depois: T11, Postgres + pgvector e auditoria (Docker). O autor ainda precisa das chaves da Tavily (T12) e do HubSpot (T17).
 
 ## Comandos

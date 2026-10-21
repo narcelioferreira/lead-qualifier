@@ -19,28 +19,26 @@ USAGE = Usage(input_tokens=10_000, cached_input_tokens=2_000, output_tokens=1_50
 
 
 def test_cost_mini_hand_computed() -> None:
-    # 8.000 × 0,75 + 2.000 × 0,075 + 1.500 × 4,50 = 6.000 + 150 + 6.750 = 12.900 → / 1M
-    assert cost_usd(USAGE, get_catalog().get("openai-mini")) == Decimal("0.0129")
+    # 8.000 × 0,075 + 2.000 × 0,037 + 1.500 × 0,30 = 600 + 74 + 450 = 1.124 → / 1M
+    assert cost_usd(USAGE, get_catalog().get("groq-mini")) == Decimal("0.001124")
 
 
 def test_cost_large_hand_computed() -> None:
-    # 8.000 × 2,50 + 2.000 × 0,25 + 1.500 × 15 = 20.000 + 500 + 22.500 = 43.000 → / 1M
-    assert cost_usd(USAGE, get_catalog().get("openai-large")) == Decimal("0.043")
+    # 8.000 × 0,15 + 2.000 × 0,075 + 1.500 × 0,60 = 1.200 + 150 + 900 = 2.250 → / 1M
+    assert cost_usd(USAGE, get_catalog().get("groq-large")) == Decimal("0.00225")
 
 
-def test_cost_embedding_and_local_slm() -> None:
+def test_cost_local_models_is_zero() -> None:
     catalog = get_catalog()
-    assert cost_usd(Usage(input_tokens=1_000_000), catalog.get("openai-embedding")) == Decimal(
-        "0.02"
-    )
     assert cost_usd(USAGE, catalog.get("ollama-slm")) == 0
+    assert cost_usd(Usage(input_tokens=1_000_000), catalog.get("ollama-embedding")) == 0
 
 
 def test_cost_is_exact_when_summing_many_calls() -> None:
-    spec = get_catalog().get("openai-mini")
+    spec = get_catalog().get("groq-mini")
     one = Usage(input_tokens=1, output_tokens=1)
     total = sum((cost_usd(one, spec) for _ in range(1000)), Decimal(0))
-    assert total == Decimal("0.00525")  # 1000 × (0,75 + 4,50) / 1M, sem erro de float
+    assert total == Decimal("0.000375")  # 1000 × (0,075 + 0,30) / 1M, sem erro de float
 
 
 def test_usage_sum_and_consistency() -> None:
@@ -54,12 +52,12 @@ def test_usage_sum_and_consistency() -> None:
 def test_catalog_models_and_unknown_key() -> None:
     catalog = get_catalog()
     assert {
-        "openai-mini",
-        "openai-large",
-        "openai-embedding",
+        "groq-mini",
+        "groq-large",
         "ollama-slm",
+        "ollama-embedding",
     } <= catalog.models.keys()
-    assert catalog.get("openai-mini").key == "openai-mini"
+    assert catalog.get("groq-mini").key == "groq-mini"
     with pytest.raises(CatalogError, match="desconhecido"):
         catalog.get("gpt-qualquer")
 
@@ -75,14 +73,15 @@ def _variant(tmp_path: Path, key: str, **changes: object) -> Path:
 @pytest.mark.parametrize(
     ("key", "changes", "match"),
     [
-        ("openai-mini", {"model": "gpt-5.4-mini"}, "snapshot datado"),
+        ("groq-mini", {"model": "qwen/qwen3-32b-preview"}, "versão móvel"),
+        ("ollama-slm", {"model": "qwen3:latest"}, "versão móvel"),
         ("ollama-slm", {"model": "qwen3"}, "fixe a tag"),
-        ("ollama-slm", {"model": "qwen3:latest"}, "fixe a tag"),
-        ("ollama-slm", {"reasoning_effort": "low"}, "só existe na OpenAI"),
-        ("openai-mini", {"price_per_1m": {"input": 1, "cached_input": 2, "output": 1}}, "cached"),
-        ("openai-mini", {"price_per_1m": {"input": -1, "cached_input": 0, "output": 1}}, "input"),
-        ("openai-mini", {"provider": "anthropic"}, "provider"),
-        ("openai-mini", {"temperature": 0.2}, "temperature"),
+        ("ollama-slm", {"reasoning_effort": "low"}, "não se aplica"),
+        ("groq-mini", {"reasoning_effort": "xhigh"}, "reasoning_effort"),
+        ("groq-mini", {"price_per_1m": {"input": 1, "cached_input": 2, "output": 1}}, "cached"),
+        ("groq-mini", {"price_per_1m": {"input": -1, "cached_input": 0, "output": 1}}, "input"),
+        ("groq-mini", {"provider": "openai"}, "provider"),
+        ("groq-mini", {"temperature": 0.2}, "temperature"),
     ],
 )
 def test_invalid_catalog_raises(tmp_path: Path, key: str, changes: dict[str, object],

@@ -3,7 +3,7 @@
 ## Contexto
 Este é um projeto acadêmico com padrão profissional, que será documentado e publicado no LinkedIn. Ele recebe um lead B2B (empresa, cargo, mensagem), pesquisa dados públicos da empresa, classifica a aderência ao perfil de cliente ideal (ICP), sugere o próximo passo comercial, grava o resultado no HubSpot e registra uma justificativa auditável. A avaliação é feita em 50 leads rotulados manualmente, medindo concordância com humanos e custo por lead.
 
-**Escopo final.** Entram: LangGraph, Ontologia, RAG Agêntico, SLM, LLM Routing, MCP, OpenAI, FastAPI, Docker e HubSpot.
+**Escopo final.** Entram: LangGraph, Ontologia, RAG Agêntico, SLM, LLM Routing, MCP, Groq (API compatível com OpenAI, plano gratuito), FastAPI, Docker e HubSpot.
 **Ficam de fora:** PydanticAI e Langflow (sobreposição com o LangGraph ou low-code). Deep Agents também sai, para manter o foco e um custo previsível; aparece apenas no roadmap de uma v2. O Pydantic continua sendo usado para schemas.
 
 ### Princípio de design central
@@ -29,7 +29,7 @@ Este é um projeto acadêmico com padrão profissional, que será documentado e 
                     └─────────────────────────────────────────────────────────────────┘
                               │ chamadas de LLM
                               ▼
-                         OpenAI API (modelo mini + modelo maior + embeddings)
+                         Groq API (gpt-oss-20b mini + gpt-oss-120b maior)
 ```
 
 | Container | Responsabilidade |
@@ -131,7 +131,7 @@ Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e cu
 
 ## 5. RAG Agêntico
 - **Base interna** (`knowledge_base/`, de 15 a 30 documentos fictícios em Markdown): playbook por tier, cases por setor, objeções e respostas, descrição do produto.
-- **Ingestão:** `scripts/ingest_kb.py`, com chunking por seção, embeddings da OpenAI (`text-embedding-3-small`), armazenamento no pgvector e metadados `{doc_type, sector, tier}`.
+- **Ingestão:** `scripts/ingest_kb.py`, com chunking por seção, embeddings locais no Ollama (`nomic-embed-text:v1.5`; a Groq não oferece embeddings), armazenamento no pgvector e metadados `{doc_type, sector, tier}`.
 - **Recuperação:** busca híbrida (vetorial + filtro por metadado de setor e tier) e top-k com citação.
 - **Comportamento agêntico:** no `agentic_research`, o agente escolhe a fonte (web, site da empresa ou base interna) e avalia a suficiência da evidência. No `suggest_next_step`, recupera o playbook e os cases filtrados pelo setor da ontologia.
 - Nenhum lead do conjunto de teste entra na base, para evitar vazamento na avaliação.
@@ -213,7 +213,7 @@ lead-qualifier/
 │   ├── graph/          # state.py, builder.py, nodes/*.py
 │   ├── ontology/       # models.py, taxonomy/*.yaml, rubric.yaml, scoring.py
 │   ├── routing/        # policy.py, models.yaml, cost.py
-│   ├── llm/            # clients OpenAI e Ollama, structured output
+│   ├── llm/            # clients Groq e Ollama, structured output
 │   ├── prompts/v1/
 │   ├── audit/          # db.py, repository.py, migrations (alembic)
 │   └── config.py
@@ -229,7 +229,7 @@ lead-qualifier/
 ```
 
 ## 13. Stack fechada
-Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · langchain-openai · langchain-mcp-adapters · `mcp` (FastMCP) · OpenAI API (mini + maior, versões fixadas) · Ollama (SLM de 1B a 4B, escolhido por benchmark no subconjunto do guardrail) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
+Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · langchain-mcp-adapters · `mcp` (FastMCP) · Groq API (gpt-oss-20b + gpt-oss-120b, pesos abertos fixos) · Ollama (SLM de 1B a 4B, escolhido por benchmark no subconjunto do guardrail) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
 
 ## 14. ADRs a registrar em `docs/adr/`
 1. LangGraph como orquestrador, em vez de chain ou PydanticAI
