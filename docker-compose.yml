@@ -1,0 +1,35 @@
+# Serviços de infraestrutura para desenvolvimento local e testes de integração.
+# Uso: `docker compose up -d postgres` (e `ollama` quando precisar do SLM).
+# As portas só escutam em 127.0.0.1: nada fica exposto na rede local.
+name: lead-qualifier
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lead}
+      POSTGRES_DB: ${POSTGRES_DB:-lead_qualifier}
+      # Sem valor padrão: o compose falha se a senha não estiver no .env.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.40.1
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama:

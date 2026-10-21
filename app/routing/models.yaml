@@ -27,6 +27,9 @@ models:
     provider: ollama
     kind: chat
     model: qwen3:4b
+    # Sem isso o qwen3 gasta o limite de tokens "pensando" (~120 s em CPU, resposta vazia);
+    # com think: false responde em ~1,4 s.
+    think: false
     max_output_tokens: 1000
     price_per_1m: {input: 0, cached_input: 0, output: 0}
   # Embeddings locais para o RAG (a Groq não oferece modelo de embeddings).

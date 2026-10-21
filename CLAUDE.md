@@ -47,11 +47,15 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T01–T08: contexto, ontologia/rubrica, setup, CI (GitHub Actions verde), contratos, ontologia em código, score determinístico e dataset de 50 leads (`evals/dataset.jsonl`). São 125 testes.
 - ✅ T09: rotulagem humana concluída (`evals/labels.jsonl`, 10 A · 14 B · 12 C · 14 D, anotador único).
 - ✅ T10: clientes **Groq** (gpt-oss-20b mini, gpt-oss-120b maior) e Ollama, `models.yaml` e custo em `Decimal`. 214 testes unitários e integração real com a Groq verdes. O teste real do Ollama roda quando o container subir (T11). Plano gratuito: 8K tokens/min e 200K tokens/dia por modelo, então as avaliações precisam de throttling (T15).
-- ⏭️ **Próxima: T11**, Postgres + pgvector e auditoria (Docker; incluir o serviço Ollama para fechar a integração do SLM). O autor ainda precisa das chaves da Tavily (T12) e do HubSpot (T17).
+- ✅ T11: Postgres 16 + pgvector e Ollama no `docker-compose.yml`, migrations Alembic (`agent_runs`, `agent_steps`) e repositório de auditoria. Integração real verde (Groq, Ollama com `think: false` e Postgres: 11 testes).
+- ⏭️ **Próxima: T12**, ferramentas de pesquisa (Tavily com cache e site da empresa com trafilatura). Os domínios `.example` são resolvidos pelas fixtures em `evals/fixtures/companies/`, sem rede.
 
 ## Comandos
 ```bash
 uv sync        # instalar dependências
 make check     # gate completo
 make fmt       # formatar e aplicar auto-fix do ruff
+docker compose up -d postgres ollama   # infraestrutura local (porta do host em POSTGRES_PORT)
+uv run alembic upgrade head            # aplicar migrations
+uv run pytest -m integration           # testes com serviços reais (Groq, Postgres, Ollama)
 ```

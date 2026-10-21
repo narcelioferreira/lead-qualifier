@@ -264,6 +264,7 @@ async def test_ollama_parses_structured_output() -> None:
     assert result.cost_usd == 0
     body = json.loads(route.calls.last.request.content)
     assert body["stream"] is False
+    assert body["think"] is False
     assert body["options"]["temperature"] == 0
     assert body["format"]["required"] == ["sector", "confidence", "evidence"]
 

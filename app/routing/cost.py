@@ -52,6 +52,8 @@ class ModelSpec(BaseModel):
     model: str = Field(min_length=1)
     reasoning_effort: Literal["low", "medium", "high"] | None = None
     max_output_tokens: int | None = Field(default=None, ge=1, le=128_000)
+    # Só Ollama: liga/desliga o "thinking" de modelos que o suportam (None = não envia).
+    think: bool | None = None
     price_per_1m: Price
 
     @model_validator(mode="after")
@@ -63,6 +65,8 @@ class ModelSpec(BaseModel):
                 raise ValueError(f"{self.key}: fixe a tag do modelo Ollama (ex.: qwen3:4b)")
             if self.reasoning_effort is not None:
                 raise ValueError(f"{self.key}: reasoning_effort não se aplica ao Ollama")
+        elif self.think is not None:
+            raise ValueError(f"{self.key}: think só se aplica ao Ollama")
         return self
 
 

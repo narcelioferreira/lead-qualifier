@@ -82,6 +82,7 @@ def _variant(tmp_path: Path, key: str, **changes: object) -> Path:
         ("groq-mini", {"price_per_1m": {"input": -1, "cached_input": 0, "output": 1}}, "input"),
         ("groq-mini", {"provider": "openai"}, "provider"),
         ("groq-mini", {"temperature": 0.2}, "temperature"),
+        ("groq-mini", {"think": False}, "think só se aplica"),
     ],
 )
 def test_invalid_catalog_raises(tmp_path: Path, key: str, changes: dict[str, object],

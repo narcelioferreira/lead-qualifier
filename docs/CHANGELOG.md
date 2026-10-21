@@ -213,3 +213,40 @@
 
   Os custos foram conferidos à mão contra o preço de lista. O teste do Ollama segue pulado até o container subir (T11).
 - **Correção durante a task:** o `.env` ainda tinha o `API_KEY` de exemplo, que o `config.py` rejeita de propósito. Foi gerado um valor aleatório com `secrets.token_urlsafe(48)`, sem exibi-lo, e o `.env` ficou com permissão `600`.
+
+## T11: Banco de dados e auditoria
+- `docker-compose.yml`: `pgvector/pgvector:0.8.7-pg16` (Postgres 16.15) e `ollama/ollama:0.40.1`, com versões fixadas, volumes nomeados e healthcheck no Postgres.
+- `app/audit/models.py`: tabelas `agent_runs` (uma por execução) e `agent_steps` (uma por nó: modelo, motivo da rota, tokens, custo, latência, saída JSON e fontes). Têm constraints nomeadas (tier, status, score, faixa de confiança, custo ≥ 0, cache ≤ input) e `ON DELETE CASCADE`.
+- `migrations/` (Alembic): migration `0001` com as duas tabelas e a extensão `vector` (pgvector, usada pelo RAG na Fase F). O `env.py` lê a URL do `config.py`, e o `alembic.ini` não tem URL nem senha.
+- `app/audit/repository.py`: `start_run` → `add_step` → `complete_run` / `fail_run` e `get_run`. SQLAlchemy assíncrono com psycopg 3.
+- **Decisões:**
+  - o custo da execução é a **soma dos passos, calculada no banco** no encerramento, para o total não divergir do detalhe;
+  - uma execução encerrada não aceita novos passos nem um segundo encerramento (`SELECT … FOR UPDATE`);
+  - `needs_human_review` vira o status `needs_review`, que será usado pela T31;
+  - o `QualificationResult` completo fica em JSONB, para reprodução e para a API (`GET /v1/runs/{id}`).
+- **Teste:**
+  - `tests/unit/test_audit.py` (11 testes): máscara de e-mail, sanitização preservada, `StepRecord.from_llm`, truncamento de erros, constraints nomeadas, head único das migrations e `alembic.ini` sem URL.
+  - `tests/integration/test_audit_repo.py` (9 testes) contra o Postgres real em container, num **banco descartável** criado e apagado a cada execução:
+    - execução completa gravada e lida de volta;
+    - `needs_review`;
+    - falha com erros truncados e o custo gasto antes da falha registrado;
+    - execução encerrada imutável;
+    - execução inexistente e `run_id` divergente;
+    - `run_id` duplicado;
+    - constraints do banco (tier `E`, status inválido, score 101, cache > input, custo negativo);
+    - cascade;
+    - `alembic check` (modelos = migrations);
+    - **downgrade até `base` e upgrade de novo**.
+  - O ciclo upgrade → check → downgrade → upgrade também foi rodado à mão no banco de desenvolvimento.
+- **Segurança:**
+  - **LGPD/minimização:** o e-mail do lead é gravado mascarado (`l***@example.com`) e há teste garantindo que ele não aparece em claro;
+  - `hide_parameters=True` no engine, para os valores das queries (texto do lead) não irem para logs nem exceções;
+  - erros gravados são limitados a 20 itens de 500 caracteres;
+  - a senha do Postgres vem do `.env` (o compose falha sem ela) e as portas escutam só em `127.0.0.1`;
+  - as constraints do banco são a segunda linha de defesa, mesmo que o código tenha bug.
+- **Problemas encontrados e corrigidos:**
+  1. A porta 5432 já estava em uso por um PostgreSQL do sistema da máquina do autor. A porta do host virou configurável (`POSTGRES_PORT`, padrão 5432); o `.env` local usa 5434 e o `DATABASE_URL` foi ajustado. O serviço do sistema não foi tocado.
+  2. O `.env.example` ganhou `POSTGRES_USER/PASSWORD/DB/PORT`. A senha de exemplo foi apontada pelo `detect-secrets` (falso positivo) e auditada no baseline como `is_secret: false`.
+- **Observação:** `repository.py` aparece com 61% de cobertura no `make check`, porque o caminho com banco só é exercitado pelos testes `-m integration`, que não rodam por padrão nem no CI.
+- **Integração do SLM (pendente desde a T10), fechada:** com o container do Ollama e o `qwen3:4b` baixado, o teste real **falhou** por timeout (3 × 60 s). A causa: o `qwen3` é um modelo de *thinking*, que gastou os 1.000 tokens de saída "pensando" (~120 s em CPU, sem GPU) e devolveu a resposta vazia. **Correção:** novo campo `think` no catálogo (só para Ollama, validado), com `think: false` no `qwen3:4b`. Depois disso: `setor=target`, 53 tokens de entrada e 9 de saída, **1,15 s**. Ele não é enviado a modelos sem thinking, que podem rejeitar o parâmetro (relevante para o benchmark da T28).
+- **Resultado final:** 226 testes unitários e **11 testes de integração verdes** (Groq, Ollama e Postgres).

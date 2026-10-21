@@ -58,6 +58,8 @@ class OllamaClient:
             "stream": False,
             "options": options,
         }
+        if spec.think is not None:
+            body["think"] = spec.think
         start = time.perf_counter()
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response, attempts = await send_with_retry(
