@@ -367,3 +367,57 @@
 - **Orçamento da Groq:** ~4,5K tokens por lead. O split dev (20 leads, ~90K tokens) cabe em um dia (200K tokens/dia); dev + test (50 leads, ~225K) não cabem no mesmo dia, mas a retomada resolve isso.
 - **Segurança:** o arquivo de previsões não tem dados pessoais (só id, tier, métricas e erros truncados); o split test está protegido.
 - **Problema corrigido:** o bandit apontou o `random.Random` do bootstrap (B311). É falso positivo: o IC precisa de semente fixa para ser reproduzível, e não há uso de segurança. Marcado com `nosec` e o motivo.
+
+## T16 (em andamento): baseline × MVP no split dev
+- **Temperatura fixada em 0** no catálogo (`temperature` por modelo). Com o padrão do gpt-oss (0,6), a L005 tinha saído B numa rodada e D na outra (T15).
+- **Configuração `baseline`** (`build_baseline_graph`, prompt `baseline`): **mesma pesquisa** do MVP, mas o LLM decide tier e nota sozinho, sem ontologia nem rubrica. Assim a comparação isola o efeito de "ontologia + score em código".
+- **Runner:** `--config baseline|mvp`, `--prompt-version`, `--retry-failed` (refaz só os leads que falharam) e **disjuntor** (para após 3 falhas seguidas, em geral por limite diário da Groq, sem gastar os leads restantes).
+- **Rodadas no dev** (relatórios em `evals/reports/dev/`; o split test ainda não foi usado):
+
+  | Configuração | Acurácia (IC 95%) | Kappa ponderado (IC 95%) | Custo médio/lead | Tokens |
+  |---|---|---|---:|---:|
+  | baseline | 70% (50–90%) | 0,655 (0,37–0,89) | US$ 0,00017 | 35,7K |
+  | MVP, prompt v1 | 70% (50–90%) | 0,715 (0,42–0,92) | US$ 0,00034 | 68,6K |
+  | MVP, prompt v2 | **80% (60–95%)** | **0,839 (0,63–1,00)** | — | — |
+
+  - **No baseline, a injeção da L005 funcionou:** o lead pediu "tier A" e recebeu A. O baseline também deu A a uma enterprise, que o teto C1 do MVP leva a B.
+  - **Análise de erros do MVP v1** (só dev): injeção não marcada (L005); concorrente não reconhecido (L035 Sascar); `out` atribuído com facilidade e com certeza alta, desqualificando leads por K6 (L031 agro, L042 atacado); falha de schema na L040.
+  - **Prompt v2** (regras gerais do ICP, não ajustes por lead): exemplos de injeção dentro de pedido legítimo; concorrente = quem vende rastreamento ou telemetria; `out` só com evidência da atividade (na dúvida, `unknown`); certeza `high` só com fato afirmado; justificativa em português, com o porte em funcionários. No v2, os 6 leads D do dev foram reconhecidos.
+- **Achados de dados reais, corrigidos no código:**
+  - a **Localiza tem mais de 500 mil veículos**, acima do limite que eu tinha posto no schema (`fleet_size` ≤ 500 mil), o que fazia a extração falhar duas vezes. O limite agora é de 5 milhões;
+  - homes reais com JS embutido passam de 2 MB; o limite de HTML subiu para 5 MB.
+- **Pendente:** nova rodada do MVP no dev com os controles de segurança abaixo (eles mudam o comportamento), medição de variância e a **rodada única no test** para `baseline` e `mvp`, com os relatórios `01-baseline.md` e `02-mvp.md`.
+
+## Segurança de agentes (OWASP ASI 2026 + AST), autorizada pelo autor antes do test da T16
+- **Motivação:** o autor acrescentou ao README um mapeamento ao OWASP Agentic Skills Top 10. Ao revisá-lo:
+  - o AST trata de *skills* instaláveis e ainda está em revisão;
+  - o OWASP Top 10 for Agentic Applications 2026 (ASI) é a referência direta para este agente;
+  - algumas afirmações iam além do código (monitorar tokens não é limitar; a delimitação reduz, mas não "garante", a separação).
+  - **Decisão do autor:** ASI como referência principal, AST complementar, tudo implementado **antes** do test.
+- **S4 · Integridade de prompts e configuração** (ASI04 / AST07): `app/integrity.py` e `app/integrity.lock.json` com o SHA-256 de cada versão de prompt, da rubrica, das taxonomias e do catálogo.
+  - Versão de prompt publicada **não pode mudar**.
+  - Os demais artefatos só mudam com `scripts/lock_config.py --allow <nome>`.
+  - O grafo de produção **recusa iniciar** se algo divergir (fail closed), e o digest da configuração vai para o passo `audit_log` de cada execução.
+- **S1 · Orçamento por execução** (ASI08 / AST08): `RunBudget` com 6 chamadas ao LLM, 24K tokens e 300 s, conferido **antes de cada chamada**. Estourou, a chamada não é feita e o motivo é auditado.
+- **S2 · Detector determinístico de injeção** (ASI01 / AST05): `app/security/injection.py`, com famílias de padrões (sobrescrever instruções, trocar o papel do modelo, falsa mensagem de sistema, manipular a nota, vazar prompt ou dados, ocultar a manipulação) sobre o texto normalizado (sem acento, sem caracteres invisíveis).
+  - Varre a mensagem, o cargo, o nome da empresa e o **site da própria empresa**. Resultados de busca (páginas de terceiros) ficam de fora.
+  - **Com um padrão detectado, o texto não vai ao LLM:** o lead cai na K1, sem custo.
+  - **Cuidado metodológico:** as regras foram escritas com conhecimento geral e os ataques do **dev**; o split test não foi olhado.
+  - Dois falsos positivos encontrados na revisão e corrigidos antes dos testes: "não podemos ignorar as **regras** da Lei 13.103" e "usamos o **sistema:** planilhas".
+- **S3 · Saneamento da saída do LLM** (ASI09 / LLM05): `app/security/output.py`. A justificativa, que vai para a Note do HubSpot, perde HTML, imagens e links Markdown, URLs que não estão nas evidências, esquemas `javascript:`/`data:` e caracteres invisíveis, e tem tamanho limitado. Aplicado no MVP e no baseline.
+- **S6 · Métrica de segurança na avaliação:** o relatório ganhou a seção "Segurança: leads adversariais", com ataques desqualificados, ataques pegos pela regra sem LLM e falsos alarmes (lead legítimo com K1). Os ataques são identificados pelas tags do dataset, que o agente não vê.
+- **S5 · Cadeia de suprimentos** (ASI04 / AST02):
+  - Actions fixadas por **SHA de commit** (`checkout` v4.4.0, `setup-uv` v5.4.2), resolvido a partir das tags oficiais, inclusive as anotadas;
+  - imagens Docker fixadas por **digest** (`@sha256:`);
+  - Dependabot para uv, Actions e compose (abre PR, nunca atualiza sozinho);
+  - testes impedem regressão para tags móveis.
+- **S7 · `docs/06-seguranca-agentes.md`:** ativos, mapeamento ASI01–ASI10 (controle → teste → planejado), mapeamento AST complementar (AST01 e AST10 não se aplicam), medição e riscos residuais.
+- **S8 · README:** a seção colada pelo autor tinha perdido a formatação Markdown do arquivo inteiro a partir dela. O arquivo foi restaurado da versão commitada (a versão do autor foi guardada) e a seção foi reescrita com o mapeamento corrigido, separando "implementado" de "planejado".
+- **Teste:**
+  - `test_integrity.py` (10), `test_injection.py` (35), `test_output.py` (5), `test_supply_chain.py` (4) e testes de grafo do orçamento, do detector e do saneamento;
+  - **415 testes** (cobertura de 95%) + **20 de integração verdes** contra Groq, Tavily, Ollama e Postgres.
+  - **Validação por mutação:** com o detector desligado, 23 testes falham; com o orçamento desligado, 3 de 3.
+  - O detect-secrets continua pegando um token falso fora do lock (testado).
+- **Problemas encontrados e corrigidos:**
+  1. O detect-secrets apontou os hashes do `integrity.lock.json` como "alta entropia" (falso positivo). Como JSON não aceita `pragma`, o arquivo foi excluído **por caminho exato**, e confirmei que um segredo falso em outro arquivo continua derrubando o gate.
+  2. O detector não removia caracteres invisíveis por conta própria (dependia do `LeadInput`). Agora aplica a mesma sanitização, porque também roda sobre o texto dos sites.

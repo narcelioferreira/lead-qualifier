@@ -12,6 +12,8 @@ models:
     kind: chat
     model: openai/gpt-oss-20b
     reasoning_effort: low
+    # Avaliação reproduzível: com o padrão (0,6) a L005 saiu B numa rodada e D na outra (T15).
+    temperature: 0
     max_output_tokens: 4000
     price_per_1m: {input: 0.075, cached_input: 0.037, output: 0.30}
   groq-large:
@@ -19,6 +21,7 @@ models:
     kind: chat
     model: openai/gpt-oss-120b
     reasoning_effort: medium
+    temperature: 0
     max_output_tokens: 8000
     price_per_1m: {input: 0.15, cached_input: 0.075, output: 0.60}
   # SLM local (guardrail e normalização de cargo). Provisório: o modelo definitivo é escolhido

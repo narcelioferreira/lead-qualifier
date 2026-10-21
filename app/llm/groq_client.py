@@ -70,6 +70,8 @@ class GroqClient:
         }
         if spec.reasoning_effort:
             body["reasoning_effort"] = spec.reasoning_effort
+        if spec.temperature is not None:
+            body["temperature"] = spec.temperature
         if spec.max_output_tokens:
             body["max_completion_tokens"] = spec.max_output_tokens
 

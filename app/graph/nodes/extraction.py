@@ -52,7 +52,8 @@ class Extraction(BaseModel):
     uf: UF | None
     based_in_brazil: bool | None
     employee_count: int | None = Field(ge=1, le=2_000_000)
-    fleet_size: int | None = Field(ge=1, le=500_000)
+    # A Localiza passa de 500 mil veículos (achado da T16): o limite é só contra absurdo.
+    fleet_size: int | None = Field(ge=1, le=5_000_000)
     sector: SectorFit
     sector_certainty: Certainty
     size_certainty: Certainty

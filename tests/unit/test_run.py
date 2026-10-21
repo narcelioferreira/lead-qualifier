@@ -120,7 +120,8 @@ async def test_main_end_to_end_with_fake_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     @asynccontextmanager
-    async def fake() -> AsyncIterator[FakeGraph]:
+    async def fake(prompt_version: str) -> AsyncIterator[FakeGraph]:
+        assert prompt_version == "v1"
         yield FakeGraph()
 
     monkeypatch.setitem(run.CONFIGS, "fake", fake)
@@ -130,3 +131,32 @@ async def test_main_end_to_end_with_fake_config(
     assert code == 0
     assert len(load_rows(out)) == 3
     assert "Split:** dev (3 leads)" in report.read_text(encoding="utf-8")
+
+
+async def test_retry_failed_reruns_only_failed_leads(tmp_path: Path) -> None:
+    out = tmp_path / "p.jsonl"
+    graph = FakeGraph(explode=ITEMS[1].company_name, fail=ITEMS[2].company_name)
+    await run_eval(ITEMS, graph, out, config="fake", pause_s=0, log=lambda _: None)
+    again = FakeGraph()
+    rows = await run_eval(ITEMS, again, out, config="fake", pause_s=0, retry_failed=True,
+                          log=lambda _: None)  # fmt: skip
+    assert [r.id for r in rows] == [ITEMS[1].id, ITEMS[2].id]
+    assert all(r.tier is Tier.A for r in rows)
+    # Sem --retry-failed, nada roda de novo.
+    assert await run_eval(ITEMS, FakeGraph(), out, config="fake", pause_s=0,
+                          log=lambda _: None) == []  # fmt: skip
+
+
+async def test_consecutive_failures_stop_the_run(tmp_path: Path) -> None:
+    class AlwaysFails(FakeGraph):
+        async def ainvoke(self, input: dict[str, Any], /) -> dict[str, Any]:
+            self.inputs.append(input)
+            return {"status": "failed", "errors": ["groq: indisponível"]}
+
+    logs: list[str] = []
+    graph = AlwaysFails()
+    items = load_dataset(split="dev")[:8]
+    rows = await run_eval(items, graph, tmp_path / "p.jsonl", config="fake", pause_s=0,
+                          max_consecutive_failures=3, log=logs.append)  # fmt: skip
+    assert len(rows) == 3  # para depois de 3 falhas seguidas, sem gastar os outros 5
+    assert "--retry-failed" in logs[-1]

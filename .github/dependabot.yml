@@ -1,0 +1,14 @@
+# Alertas e PRs de atualização (OWASP ASI04 / AST02). Toda atualização passa pelo CI e por revisão:
+# nada é atualizado automaticamente em produção.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule: {interval: "weekly"}
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: {interval: "weekly"}
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule: {interval: "monthly"}

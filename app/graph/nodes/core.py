@@ -92,6 +92,8 @@ def build_result(state: QualificationState) -> QualificationResult:
 def finalize(state: QualificationState) -> tuple[FinalStatus, QualificationResult | None]:
     """Status final e resultado. Rejeitado ou falho não tem resultado (nem tier)."""
     status = state.get("status", "failed")
+    if status not in {"rejected", "failed"} and "result" in state:
+        return "completed", state["result"]  # o baseline já devolve o resultado pronto
     if status in {"rejected", "failed"} or "score" not in state:
         return ("rejected" if status == "rejected" else "failed"), None
     result = build_result(state)

@@ -48,7 +48,7 @@ class OllamaClient:
         schema: type[T],
     ) -> LLMResult[T]:
         check_chat(spec, PROVIDER)
-        options: dict[str, Any] = {"temperature": 0}
+        options: dict[str, Any] = {"temperature": spec.temperature or 0}
         if spec.max_output_tokens:
             options["num_predict"] = spec.max_output_tokens
         body = {

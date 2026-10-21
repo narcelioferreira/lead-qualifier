@@ -98,6 +98,7 @@ async def test_groq_parses_structured_output_and_cost() -> None:
     assert body["model"] == "openai/gpt-oss-20b"
     assert body["reasoning_effort"] == "low"
     assert body["include_reasoning"] is False
+    assert body["temperature"] == 0  # fixada no catálogo para a avaliação ser reproduzível
     assert body["max_completion_tokens"] == 4000
     fmt = body["response_format"]["json_schema"]
     assert fmt["strict"] is True

@@ -5,7 +5,8 @@ name: lead-qualifier
 
 services:
   postgres:
-    image: pgvector/pgvector:0.8.7-pg16
+    # Tag legível + digest imutável: uma tag republicada não troca a imagem (ASI04 / AST02).
+    image: pgvector/pgvector:0.8.7-pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lead}
       POSTGRES_DB: ${POSTGRES_DB:-lead_qualifier}
@@ -23,7 +24,7 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:0.40.1
+    image: ollama/ollama:0.40.1@sha256:69f27594d8127cb43db1edcafa5e2d3cd8f88bdbc54a2cf3ceb11b8d138a24b1
     ports:
       - "127.0.0.1:11434:11434"
     volumes:

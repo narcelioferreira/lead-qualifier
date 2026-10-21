@@ -31,7 +31,8 @@ from tools_mcp.base import ToolCache, ToolRequestError, cache_key
 
 TOOL = "fetch_company_site"
 MAX_PAGE_CHARS = 4000
-MAX_HTML_BYTES = 2_000_000
+# Homes reais com JS embutido passam de 2 MB (achado da T16); o limite é contra abuso.
+MAX_HTML_BYTES = 5_000_000
 MAX_REDIRECTS = 5
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 SIMULATED_TLD = ".example"

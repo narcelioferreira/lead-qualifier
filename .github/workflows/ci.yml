@@ -18,13 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      # Actions fixadas por SHA de commit (imutável), não por tag móvel (OWASP ASI04 / AST02).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
       - name: Instalar dependências
+        # --locked: falha se o uv.lock divergir; o uv confere o hash de cada pacote baixado.
         run: uv sync --locked
       - name: Lint, tipos, testes e segurança
         run: make check

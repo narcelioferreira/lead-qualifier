@@ -72,5 +72,24 @@ def build_graph(nodes: GraphNodes | None = None) -> CompiledGraph:
     return graph.compile()
 
 
+def build_baseline_graph(research: Node, classify: Node, audit_log: Node) -> CompiledGraph:
+    """Baseline da T16: mesma pesquisa, mas o LLM decide o tier sozinho (sem ontologia/rubrica)."""
+    graph = StateGraph(QualificationState, input_schema=GraphInput)
+    graph.add_node("validate_input", core.validate_input)
+    graph.add_node("research", research)
+    graph.add_node("classify", classify)
+    graph.add_node("audit_log", audit_log)
+    graph.add_edge(START, "validate_input")
+    graph.add_conditional_edges(
+        "validate_input",
+        core.route_after_validation,
+        {"continue": "research", "reject": "audit_log"},
+    )
+    graph.add_edge("research", "classify")
+    graph.add_edge("classify", "audit_log")
+    graph.add_edge("audit_log", END)
+    return graph.compile()
+
+
 def to_mermaid(graph: CompiledGraph) -> str:
     return graph.get_graph().draw_mermaid()

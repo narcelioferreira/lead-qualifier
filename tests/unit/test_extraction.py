@@ -124,3 +124,20 @@ def test_prompts_load_and_substitute() -> None:
         assert load_prompt(name).template
     with pytest.raises(ValueError):
         load_prompt("../segredo")
+
+
+def test_large_real_fleet_is_accepted() -> None:
+    """A Localiza passa de 500 mil veículos: o schema não pode recusar um fato real (T16)."""
+    p = to_profile(_x(fleet_size=600_000))
+    assert p.size is SizeBand.S_1000_PLUS
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_prompt_versions_load_without_leftover_placeholders(version: str) -> None:
+    for name in ("normalize", "assess"):
+        text = load_prompt(name, version).substitute(nonce="n0nce")
+        assert "$" not in text and "<dados_n0nce" in text
+    users = {"normalize_user": {"lead": "x", "evidence": "y"},
+             "assess_user": {"profile": "x", "evidence": "y"}}  # fmt: skip
+    for name, values in users.items():
+        assert "$" not in load_prompt(name, version).substitute(**values)

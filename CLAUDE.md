@@ -38,6 +38,7 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - Testes unitários e de grafo **nunca** chamam APIs reais. Use mocks ou fixtures (`respx`). Testes com serviços reais levam `@pytest.mark.integration` e não rodam por padrão.
 - Segredos só via `.env`, carregados por `app/config.py` como `SecretStr`. Nunca commite o `.env`.
 - Todo texto vindo do lead ou de sites é **não confiável**: delimite nos prompts e valide a saída com structured output.
+- **Segurança de agentes:** siga `docs/06-seguranca-agentes.md` (OWASP ASI 2026). Prompt publicado é imutável (`app/integrity.lock.json`); controle novo tem teste e validação por mutação.
 - YAML apenas com `yaml.safe_load`. Modelos Pydantic com `extra="forbid"`.
 - Código, comentários e documentação em português, seguindo o estilo existente.
 - Avaliação: o split **test** (30 leads) só roda nas tasks de avaliação (T16, T27, T30, T34), uma vez por configuração. Todo ajuste de prompt é feito no split **dev**.
@@ -52,7 +53,9 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T13: state e grafo LangGraph (`app/graph/`) com nós injetáveis; `validate_input` e `compute_score` já reais, demais em stub. Diagrama em `docs/grafo.mmd`. 276 testes.
 - ✅ T14: nós reais do MVP (`app/graph/nodes/mvp.py`, prompts `app/prompts/v1/`), auditoria no Postgres, `scripts/qualify.py` (só dev). 3 execuções reais auditadas. **Achado:** a injeção da L005 não foi detectada pelo mini (o score foi contido pelo código) → tratar no ajuste do dev (T16) e no guardrail (T28).
 - ✅ T15: `evals/metrics.py` (kappa conferido contra o sklearn, IC por bootstrap) e `evals/run.py` (JSONL com retomada, pausa, split test protegido por `--confirm-test`). 341 testes.
-- ⏭️ **Próxima: T16**, baselines (`baseline` e `mvp`) no dev, ajuste de prompt só no dev e uma rodada no test. **Antes:** decidir a temperatura do gpt-oss (o padrão 0,6 fez a L005 variar entre B e D) e tratar o achado de injeção da T14.
+- 🟡 **T16 em andamento:** dev feito (baseline 70% / κ 0,655; MVP v1 70% / κ 0,715; MVP v2 80% / κ 0,839). Temperatura 0, baseline, runner com `--retry-failed` e disjuntor.
+- ✅ **Segurança de agentes** (OWASP ASI 2026 + AST): integridade de prompts/config com fail closed (`app/integrity.py`, `scripts/lock_config.py`), orçamento por execução, detector determinístico de injeção, saneamento da saída, Actions por SHA e imagens por digest, métrica de ataques e `docs/06-seguranca-agentes.md`. 415 testes + 20 de integração.
+- ⏭️ **Próximo passo:** rodar o MVP v2 no dev de novo com os controles de segurança (e medir variância), depois a rodada **única** do test para `baseline` e `mvp` (`--confirm-test`), gerando `01-baseline.md` e `02-mvp.md`. Mudou prompt? Crie `v3` e rode `scripts/lock_config.py`.
 
 ## Comandos
 ```bash

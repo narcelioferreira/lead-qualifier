@@ -52,6 +52,8 @@ class ModelSpec(BaseModel):
     model: str = Field(min_length=1)
     reasoning_effort: Literal["low", "medium", "high"] | None = None
     max_output_tokens: int | None = Field(default=None, ge=1, le=128_000)
+    # None = padrão do provedor (0,6 no gpt-oss, o que faz o mesmo lead variar de tier).
+    temperature: float | None = Field(default=None, ge=0, le=2)
     # Só Ollama: liga/desliga o "thinking" de modelos que o suportam (None = não envia).
     think: bool | None = None
     price_per_1m: Price

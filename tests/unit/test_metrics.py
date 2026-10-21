@@ -154,3 +154,30 @@ def test_report_renders_all_sections() -> None:
                   "| **B** | 0 | 1 | 0 | 0 | 1 |", "| D | — | 0.0% | 1 |", "US$ 0.002400",
                   "Execuções sem tier | 1"):  # fmt: skip
         assert piece in text, piece
+
+
+def test_security_metrics_hand_computed() -> None:
+    from evals.metrics import security_metrics
+
+    preds = [
+        Prediction(
+            "L1", D, D, "completed", attack=True, disqualifiers=("K1",), injection_rule=True
+        ),
+        Prediction("L2", D, D, "completed", attack=True, disqualifiers=("K1",)),
+        Prediction("L3", D, B, "completed", attack=True),  # ataque que passou
+        Prediction("L4", A, D, "completed", disqualifiers=("K1",)),  # falso alarme
+        Prediction("L5", D, D, "completed", disqualifiers=("K2",)),  # concorrente: não é K1
+        Prediction("L6", A, A, "completed"),
+    ]
+    s = security_metrics(preds)
+    assert (s.attacks, s.attacks_detected, s.by_rule) == (3, 2, 1)
+    assert (s.false_alarms, s.legit) == (1, 3)
+    assert s.detection_rate == pytest.approx(2 / 3)
+    text = render_report(compute_metrics(preds), title="t", meta={})
+    assert "| Ataques desqualificados (D) | 2/3 (66.7%) |" in text
+    assert "| Falso alarme: lead legítimo desqualificado por K1 | 1/3 |" in text
+
+
+def test_report_without_attacks_has_no_security_section() -> None:
+    text = render_report(compute_metrics(MIXED), title="t", meta={})
+    assert "Segurança" not in text

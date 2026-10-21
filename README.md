@@ -92,23 +92,37 @@ Os relatórios ficam em [`evals/reports/`](evals/reports/).
 
 ---
 
-## Segurança e LGPD
+## Segurança
 
-Revisados e testados a cada etapa:
-- **Prompt injection:**
-  - todo texto do lead e dos sites entra no prompt dentro de um bloco `<dados_{nonce}>`, com **nonce aleatório por chamada**, e o conteúdo não consegue fechar o bloco;
-  - a saída é sempre um structured output validado com enums da ontologia, e campos extras (como `"tier": "A"`) são rejeitados;
-  - um CNAE ou um id de evidência inventado pelo LLM é descartado.
-- **SSRF:** o domínio do lead é validado, e cada requisição e cada redirect só segue se o host resolver apenas para IPs públicos, nas portas 80/443, sem credenciais na URL e com até 2 MB de HTML. Testado com metadata de cloud, loopback, rede privada e DNS malicioso.
-- **Dados pessoais:**
-  - o e-mail do lead não é enviado ao LLM e fica mascarado na auditoria (`l***@example.com`);
-  - um lead rejeitado é auditado só com o nome dos campos enviados;
-  - o engine do banco não registra parâmetros das queries.
-- **Segredos:**
-  - ficam só no `.env`, carregados como `SecretStr` (testado que não aparecem em `repr`, logs nem mensagens de erro);
-  - o `alembic.ini` não tem URL;
-  - o compose falha se a senha do banco não estiver definida, e as portas escutam só em `127.0.0.1`.
-- **Gate no CI:** ruff (inclui regras de segurança), mypy strict, pytest com cobertura, bandit, detect-secrets e pip-audit.
+Os controles seguem o **[OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)** (ASI01–ASI10), com mapeamento complementar ao **[OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)** (AST, em revisão pública). Cada controle implementado tem um teste que o comprova, e os principais foram **validados por mutação**: com a proteção desligada de propósito, os testes falham.
+
+O modelo de ameaças completo, o mapeamento AST, os testes por controle e os riscos residuais estão em **[docs/06-seguranca-agentes.md](docs/06-seguranca-agentes.md)**.
+
+| Risco (OWASP) | Controles implementados | Planejado |
+|---|---|---|
+| **ASI01 · Goal Hijack** (prompt injection) · AST05 | Conteúdo não confiável em blocos `<dados_{nonce}>` com nonce aleatório por chamada. **Detector determinístico** na mensagem, no cargo e no site da empresa: com um padrão conhecido, o texto **nem chega ao LLM** e o lead é desqualificado (K1). Saída só com enums, e **o score é calculado em código** | Guardrail com SLM local (T28) |
+| **ASI02 · Tool Misuse** · AST03, AST06 | Ferramentas só de leitura. **SSRF** bloqueado em cada requisição e redirect (só IP público, portas 80/443, sem credenciais, até 5 MB) | HubSpot com escopos mínimos e validação antes de cada ação (Fase E) |
+| **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres e Ollama só em `127.0.0.1` | `X-API-Key` na API (T21) e segredos isolados no container de tools (T19) |
+| **ASI04 · Supply Chain** · AST02, AST07 | `uv.lock` com hashes, pip-audit, bandit e detect-secrets. **Actions fixadas por SHA**, **imagens por digest** e Dependabot. **Prompts e configuração com SHA-256** (`integrity.lock.json`): versão publicada é imutável e o agente **recusa iniciar** se algo divergir | — |
+| **ASI05 · Code Execution** · AST04 | Nenhuma ferramenta executa código; a saída do LLM é só JSON validado; YAML com `safe_load` | — |
+| **ASI06 · Context Poisoning** | Cache só de sucessos, com texto sanitizado; o detector de injeção roda **a cada execução**, inclusive sobre conteúdo vindo do cache | Isolamento dos chunks do RAG (Fase F) |
+| **ASI08 · Cascading Failures** · AST08 | **Orçamento por execução** (chamadas ao LLM, tokens e tempo), retries limitados, falhas de ferramenta sem derrubar a execução, disjuntor no runner e fail closed | Teto do loop agêntico (T25) |
+| **ASI09 · Human Trust** | **Saída saneada antes de sair do agente:** a justificativa que vai ao CRM perde HTML, links fora das evidências e caracteres invisíveis. Confiança calculada em código, nunca autodeclarada | Revisão humana com `interrupt()` (T31) |
+| **ASI10 · Rogue Agents** · AST09 | Grafo com arestas fixas, tier pelo código e auditoria completa (`agent_runs`/`agent_steps`) com o digest da configuração | Limite de iterações no loop agêntico (T25) |
+
+**Dados pessoais (LGPD):**
+- o e-mail do lead não é enviado ao LLM e fica mascarado na auditoria (`l***@example.com`);
+- lead rejeitado é auditado só com o nome dos campos;
+- o engine do banco não registra parâmetros das queries.
+
+**Riscos residuais conhecidos:**
+- uma injeção nova que engane as regras e o LLM (o score em código limita o dano);
+- DNS rebinding entre a checagem de IP e a conexão;
+- a mensagem do lead é processada por um provedor externo (Groq).
+
+Os detalhes estão no documento 06.
+
+**Gate no CI:** ruff (com regras de segurança), mypy strict, pytest com cobertura, bandit, detect-secrets e pip-audit.
 
 ---
 
@@ -156,6 +170,8 @@ app/
   prompts/v1/             prompts versionados
   routing/                catálogo de modelos (versão, preço, temperatura) e custo
   audit/                  modelos SQLAlchemy e repositório de auditoria
+  security/               detector de prompt injection e saneamento da saída do LLM
+  integrity.py            hash de prompts e configuração (integrity.lock.json)
   retry.py                retry com respeito ao retry-after
 tools_mcp/                busca (Tavily) e leitura de sites, com cache (viram tools MCP)
 evals/                    dataset, gabarito, rotulagem, métricas e runner de avaliação
@@ -168,8 +184,8 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 
 ## Qualidade
 
-- **348 testes** unitários e de grafo, sem rede, e **20 testes de integração** contra serviços reais. Cobertura de ~93%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
-- Os testes das proteções foram validados por mutação: com a checagem de SSRF desligada de propósito, 12 de 13 testes falham.
+- **415 testes** unitários e de grafo, sem rede, e **20 testes de integração** contra serviços reais. Cobertura de ~95%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
+- Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):
 - o modo estrito da Groq rejeita o `anyOf` que o Pydantic gera para campos opcionais;
@@ -190,6 +206,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 | [03 · Contratos](docs/03-contratos.md) | Entrada, saída e configuração |
 | [04 · Plano de tasks](docs/04-plano-de-tasks.md) | As 36 tasks com testes e critérios de aceite |
 | [05 · Fontes do dataset](docs/05-fontes-do-dataset.md) | Fontes públicas, montagem e protocolo de rotulagem |
+| [06 · Segurança do agente](docs/06-seguranca-agentes.md) | Modelo de ameaças, OWASP ASI/AST, testes por controle e riscos residuais |
 | [CHANGELOG](docs/CHANGELOG.md) | O que foi feito em cada task, decisões e problemas corrigidos |
 
 > **Sobre o dataset:** as empresas são reais e públicas; cargos, mensagens e e-mails são inventados. As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (gpt-oss, via Groq), para evitar o viés de o modelo avaliar o próprio texto.

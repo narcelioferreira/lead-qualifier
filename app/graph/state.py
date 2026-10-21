@@ -34,6 +34,8 @@ class QualificationState(GraphInput, total=False):
     profile: LeadProfile
     # Ids (E1, E2...) das evidências que o LLM citou na extração, já filtrados.
     evidence_ids: list[str]
+    # Padrões de injeção achados pelas regras determinísticas ("origem:família").
+    injection_hits: list[str]
     # Justificativa em linguagem natural do assess (o LLM justifica; o código pontua).
     rationale: str
     confidence: float

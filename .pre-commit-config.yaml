@@ -13,5 +13,5 @@ repos:
         types: [python]
       - id: detect-secrets
         name: detect-secrets
-        entry: uv run detect-secrets-hook --baseline .secrets.baseline
+        entry: uv run detect-secrets-hook --baseline .secrets.baseline --exclude-files '^app/integrity\.lock\.json$'
         language: system

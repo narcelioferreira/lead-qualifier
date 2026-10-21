@@ -19,7 +19,7 @@ test:
 
 security:
 	uv run bandit -q -c pyproject.toml -r app tools_mcp evals
-	uv run detect-secrets-hook --baseline .secrets.baseline $$(git ls-files --cached --others --exclude-standard)
+	uv run detect-secrets-hook --baseline .secrets.baseline --exclude-files '^app/integrity\.lock\.json$$' $$(git ls-files --cached --others --exclude-standard)
 	uv export --format requirements-txt --no-hashes --no-emit-project -q > .audit-reqs.txt && uv run pip-audit -r .audit-reqs.txt --progress-spinner off
 
 check: lint typecheck test security
