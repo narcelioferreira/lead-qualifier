@@ -346,3 +346,24 @@
   2. **Taxonomia de setor:** com `default: out`, qualquer CNAE (inclusive `"00"` ou um inventado) virava `out` com certeza alta e poderia desqualificar um lead bom (K6). Agora o CNAE só vale com pelo menos 4 dígitos **e** se aparecer nas evidências.
   3. A convenção de nomes de constraint do metadata foi aplicada também no `drop_constraint` da migration 0003 (gerando `ck_agent_runs_ck_agent_runs_status`). Resolvido com `op.f()`.
 - **Observação:** `app/graph/runtime.py` tem 0% de cobertura no gate, porque só é exercitado pelas execuções reais (`scripts/qualify.py`).
+
+## T15: Runner de avaliação e métricas
+- `evals/metrics.py`: acurácia, kappa ponderado linear e simples (reaproveita o `cohen_kappa` da T09), matriz de confusão com a coluna "sem tier", precisão, revocação e suporte por classe, **IC 95% por bootstrap** (2.000 reamostras, semente fixa), custo total, médio, p50 e p95, latência p50 e p95, e tokens. Também `render_report` em Markdown.
+  - **Decisão:** uma execução sem tier (falha ou erro) conta como **erro** na acurácia e na revocação, para a métrica não ficar inflada pelos leads que o agente não conseguiu qualificar. O kappa usa só as execuções com tier, e o relatório mostra quantas foram.
+- `evals/run.py` (`uv run python -m evals.run --split dev --config mvp`):
+  - grava cada previsão em JSONL **assim que ela sai**, o que permite retomar depois de uma queda ou do limite diário da Groq (`--resume`, que pula os leads já feitos);
+  - `--pause` entre leads (padrão 20 s, pelo limite de 8K tokens/min);
+  - `--limit` para testes rápidos;
+  - exceções inesperadas do grafo são registradas como `error` e o runner segue;
+  - o grafo recebe **só o `LeadInput`** (nada de rótulo, grupo-alvo, split ou tags), e os rótulos só entram no cálculo das métricas;
+  - **o split test exige `--confirm-test`**, para não ser gasto por acidente.
+- **Teste:**
+  - `tests/unit/test_metrics.py` (16 testes): 100% de acerto, 0% de acerto e um **caso misto calculado à mão** (acurácia, precisão e revocação por classe, matriz com falha, custo e tokens). O kappa foi **conferido contra o `sklearn.metrics.cohen_kappa_score`** no caso misto e em **200 casos aleatórios × 3 ponderações** (mais de 500 comparações, diferença < 1e-12). Os percentis foram conferidos contra o `numpy` e à mão, e o bootstrap é determinístico e contém a estimativa.
+  - `tests/unit/test_run.py` (7 testes, com grafo falso): uma linha por lead, pausa só entre leads, grafo sem metadados, retomada, exceção registrada, gabarito obrigatório, relatório, split test recusado sem confirmação e `main` de ponta a ponta com configuração falsa.
+  - `scikit-learn` entra só como dependência de **dev**.
+  - 341 testes no total.
+- **Teste de fumaça real** (2 leads de dev, saídas fora do repositório): o runner, a retomada e o relatório funcionaram com Groq, Tavily e Postgres.
+  - **Achado:** a L005 (injeção), que na T14 saiu **B**, desta vez saiu **D**. Os modelos gpt-oss usam temperatura 0,6 por padrão, então o mesmo lead pode mudar de tier entre execuções. **Pendente para a T16:** fixar uma temperatura baixa no catálogo antes das rodadas oficiais e medir a variância (rodar o dev mais de uma vez).
+- **Orçamento da Groq:** ~4,5K tokens por lead. O split dev (20 leads, ~90K tokens) cabe em um dia (200K tokens/dia); dev + test (50 leads, ~225K) não cabem no mesmo dia, mas a retomada resolve isso.
+- **Segurança:** o arquivo de previsões não tem dados pessoais (só id, tier, métricas e erros truncados); o split test está protegido.
+- **Problema corrigido:** o bandit apontou o `random.Random` do bootstrap (B311). É falso positivo: o IC precisa de semente fixa para ser reproduzível, e não há uso de segurança. Marcado com `nosec` e o motivo.

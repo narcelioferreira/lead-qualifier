@@ -30,6 +30,7 @@ dev = [
     "pre-commit>=4.0",
     "respx>=0.22",
     "types-lxml>=2026.2.16",
+    "scikit-learn>=1.5",
 ]
 
 [build-system]
