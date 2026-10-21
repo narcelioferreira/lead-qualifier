@@ -276,3 +276,28 @@
 - **Problemas encontrados e corrigidos:**
   1. O `User-Agent` tinha acentos, e header HTTP só aceita ASCII: toda busca de site falharia em produção. Os testes pegaram o erro.
   2. O `detect-secrets` apontou a URL `user:senha@` do teste de SSRF (falso positivo, marcado com `pragma`).
+
+## T13: State e esqueleto do grafo
+- `app/graph/state.py`: `GraphInput` (`run_id` e `raw_input` **não validado**) e `QualificationState` (TypedDict). As listas `evidence`, `steps` e `errors` acumulam entre nós (reducer de soma).
+- `app/graph/builder.py`: `validate_input → research → normalize → assess → compute_score → audit_log`, com desvio de lead inválido direto para o `audit_log`. Os nós de pesquisa, LLM e auditoria são injetados (`GraphNodes`), então a T14 troca os stubs sem mexer no builder.
+- `app/graph/nodes/core.py`: os nós determinísticos já são **reais**. `validate_input` usa o `LeadInput` e `compute_score` reaproveita a T07. `build_result` monta o `QualificationResult`, com o custo somado dos passos.
+- `app/graph/nodes/stubs.py`: research, normalize, assess e audit_log com respostas fixas, sem rede.
+- Diagrama Mermaid gerado do código (`scripts/export_graph.py` → `docs/grafo.mmd`). 📸 em `docs/linkedin/t13-grafo.md`.
+- **Nova dependência:** `langgraph` 1.2.16 (traz o `langsmith` como dependência indireta, mas o tracing só liga com variáveis no ambiente do processo, e o `config.py` não as exporta).
+- **Teste:** `tests/graph/test_skeleton.py` (10 testes):
+  - o grafo compila com os 6 nós;
+  - o caminho feliz roda com um lead real do dataset e o state final tem todos os campos, com os passos na ordem;
+  - lead inválido (campo extra `tier`, domínio `169.254.169.254`, cargo vazio) vai para `rejected` sem pesquisa, e o erro não ecoa o valor enviado;
+  - nós injetados substituem os stubs;
+  - nós assíncronos funcionam;
+  - duas execuções dão o mesmo resultado;
+  - o `docs/grafo.mmd` está atualizado.
+  - Mais o teste do princípio do projeto: **um nó de LLM que devolve um score próprio é sobrescrito pelo `compute_score`**.
+  - Cobertura de 100% em `app/graph/`; 276 testes no total.
+- **Segurança:**
+  - o grafo recebe o payload bruto e só a validação o transforma em `LeadInput`, então nenhum nó vê entrada não validada;
+  - os erros de validação levam só o campo e o tipo do erro, nunca o valor;
+  - a regra "o LLM extrai, o código pontua" agora tem teste no nível do grafo.
+- **Problemas corrigidos:**
+  1. O mypy rejeitou o tipo dos nós: o protocolo do LangGraph exige o parâmetro **nomeado** `state`, e um `Callable[[X], R]` só aceita argumento posicional. Virou um `Protocol`.
+  2. Um teste esperava que `evidence` não existisse no state rejeitado, mas canais com reducer começam como lista vazia. A asserção foi corrigida para "lista vazia".
