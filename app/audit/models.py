@@ -1,4 +1,4 @@
-"""Tabelas de auditoria: uma linha por execução (`agent_runs`) e uma por nó (`agent_steps`).
+"""Tabelas do Postgres: auditoria (`agent_runs`, `agent_steps`) e cache das ferramentas.
 
 O schema do banco é definido pelas migrations do Alembic (`migrations/`). Estes modelos são a
 fonte para o autogenerate, e o teste de integração garante que os dois não divergem.
@@ -110,3 +110,21 @@ class AgentStep(Base):
         CheckConstraint("cost_usd >= 0", name="cost"),
         Index("ix_agent_steps_run_id", "run_id"),
     )
+
+
+class ToolCacheEntry(Base):
+    """Cache das ferramentas de pesquisa (Tavily e sites).
+
+    Além de economizar créditos, congela as evidências: sites mudam com o tempo, e a avaliação
+    precisa ver o mesmo conteúdo em todas as rodadas (docs/05-fontes-do-dataset.md).
+    """
+
+    __tablename__ = "tool_cache"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 hex
+    tool: Mapped[str] = mapped_column(String(40))
+    request: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_tool_cache_tool", "tool"),)

@@ -48,7 +48,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T09: rotulagem humana concluída (`evals/labels.jsonl`, 10 A · 14 B · 12 C · 14 D, anotador único).
 - ✅ T10: clientes **Groq** (gpt-oss-20b mini, gpt-oss-120b maior) e Ollama, `models.yaml` e custo em `Decimal`. 214 testes unitários e integração real com a Groq verdes. O teste real do Ollama roda quando o container subir (T11). Plano gratuito: 8K tokens/min e 200K tokens/dia por modelo, então as avaliações precisam de throttling (T15).
 - ✅ T11: Postgres 16 + pgvector e Ollama no `docker-compose.yml`, migrations Alembic (`agent_runs`, `agent_steps`) e repositório de auditoria. Integração real verde (Groq, Ollama com `think: false` e Postgres: 11 testes).
-- ⏭️ **Próxima: T12**, ferramentas de pesquisa (Tavily com cache e site da empresa com trafilatura). Os domínios `.example` são resolvidos pelas fixtures em `evals/fixtures/companies/`, sem rede.
+- ✅ T12: `tools_mcp/search.py` (Tavily com cache) e `tools_mcp/site.py` (home + sobre com trafilatura, SSRF bloqueado em cada redirect, `.example` servido pelas fixtures). Cache em Postgres (`tool_cache`). 266 testes unitários e 18 de integração verdes.
+- ⏭️ **Próxima: T13**, state e esqueleto do grafo LangGraph com nós stub e diagrama Mermaid 📸.
 
 ## Comandos
 ```bash

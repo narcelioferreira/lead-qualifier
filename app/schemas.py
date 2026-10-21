@@ -26,7 +26,7 @@ _HOST_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _BLOCKED_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home", ".corp", ".test")
 
 
-def _strip_control_chars(value: str) -> str:
+def sanitize_text(value: str) -> str:
     """Remove caracteres de controle e invisíveis (exceto quebra de linha e tab).
 
     Caracteres de formatação invisíveis (categoria Cf, ex. zero-width) são usados para
@@ -72,7 +72,7 @@ def normalize_domain(value: str) -> str:
     return host
 
 
-CleanStr = Annotated[str, AfterValidator(_strip_control_chars)]
+CleanStr = Annotated[str, AfterValidator(sanitize_text)]
 Domain = Annotated[str, AfterValidator(normalize_domain)]
 
 

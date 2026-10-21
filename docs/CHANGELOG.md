@@ -250,3 +250,29 @@
 - **Observação:** `repository.py` aparece com 61% de cobertura no `make check`, porque o caminho com banco só é exercitado pelos testes `-m integration`, que não rodam por padrão nem no CI.
 - **Integração do SLM (pendente desde a T10), fechada:** com o container do Ollama e o `qwen3:4b` baixado, o teste real **falhou** por timeout (3 × 60 s). A causa: o `qwen3` é um modelo de *thinking*, que gastou os 1.000 tokens de saída "pensando" (~120 s em CPU, sem GPU) e devolveu a resposta vazia. **Correção:** novo campo `think` no catálogo (só para Ollama, validado), com `think: false` no `qwen3:4b`. Depois disso: `setor=target`, 53 tokens de entrada e 9 de saída, **1,15 s**. Ele não é enviado a modelos sem thinking, que podem rejeitar o parâmetro (relevante para o benchmark da T28).
 - **Resultado final:** 226 testes unitários e **11 testes de integração verdes** (Groq, Ollama e Postgres).
+
+## T12: Ferramentas de pesquisa (versão Python direta)
+- `tools_mcp/search.py`: `TavilySearch.search(query)` (será a tool `search_company_web`). Usa busca `basic` (1 crédito), até 5 resultados, `country: brazil` e nada de `raw_content`.
+- `tools_mcp/site.py`: `SiteFetcher.fetch(domain)` (será a tool `fetch_company_site`). Busca a home (com fallback para `www.`), encontra o link institucional (sobre, quem somos, a empresa, institucional, nossa história) **só no mesmo site**, extrai o texto com `trafilatura` e trunca em 4.000 caracteres por página. Falhas viram `errors` no resultado, sem exceção, para o agente seguir com `unknown`.
+- **Empresas fictícias:** domínios `.example` são servidos por `evals/fixtures/companies/`, sem rede. Isso fecha a pendência registrada no ajuste T07/T08.
+- `tools_mcp/base.py`: erros (`ToolUnavailableError`, `ToolRequestError`), chave de cache (sha256 dos parâmetros) e `MemoryCache` / `PostgresCache`.
+- Migration `0002`: tabela `tool_cache`. O cache congela as evidências: sites mudam, e a avaliação precisa ver o mesmo conteúdo em todas as rodadas. Só respostas de sucesso entram no cache.
+- **Refactor:** o retry com `retry-after` da T10 saiu de `app/llm/base.py` para `app/retry.py` (genérico) e passou a ser usado também pela Tavily. O cliente de LLM traduz os erros para a hierarquia própria. `_strip_control_chars` virou a função pública `sanitize_text`, porque o texto de sites e da busca recebe a mesma limpeza que o texto do lead.
+- **Novas dependências:** `trafilatura` (e o `lxml`); dev: `types-lxml`.
+- **Teste:** `tests/unit/test_tools.py` (40 testes, sem rede):
+  - **Tavily:** parse, sanitização (zero-width e bidi removidos), resultados com URL `javascript:` descartados, truncamento, cache hit (1 chamada para 2 buscas), timeout com 3 tentativas, cota esgotada (432/433) sem retry, chave inválida sem vazar a chave, falha que não entra no cache e consulta vazia ou longa demais rejeitada.
+  - **Site:** home + sobre, site sem "sobre", link "Sobre" de outro domínio ignorado, 404 com fallback para `www`, timeout, fallback `www` funcionando, cache hit, redirect público seguido, conteúdo não-HTML, página acima de 2 MB e texto truncado.
+  - **SSRF (12 testes):** redirect para metadata de cloud (`169.254.169.254`), loopback IPv4/IPv6, rede privada, porta 8443, `file://` e URL com credenciais. DNS que resolve para IP privado (inclusive quando só um dos IPs é privado) e domínios inválidos (`localhost`, IP, `.local`).
+  - **Teste do teste:** com a checagem de SSRF desligada de propósito, 12 dos 13 testes desse grupo falharam (o 13º é o loop de redirects, que não depende da checagem).
+  - **Fixtures:** cada domínio `.example` do dataset é servido sem rede.
+- `tests/integration/test_tools_live.py` (7 testes): `PostgresCache` no banco real (incluindo upsert), Tavily e site real para Gobor, Atual Cargas e Della Volpe. **18 testes de integração verdes no total.**
+- **Observação da integração real:** para "Gobor Transportes", os 5 resultados da Tavily foram LinkedIn, Facebook e guias, sem o site oficial. A busca não garante o site da empresa, o que reforça buscar o site direto pelo domínio do lead. A asserção do teste passou a exigir relevância (algum resultado cita a empresa), e não um domínio exato.
+- **Segurança:**
+  - **SSRF:** cada requisição e cada salto de redirect (feitos manualmente, no máximo 5) só seguem se o host resolver **apenas** para IPs públicos (`is_global`), em http/https, nas portas 80/443 e sem credenciais na URL;
+  - limite de 2 MB por página, lido em streaming, e só `text/html`;
+  - todo texto externo sai sanitizado e truncado, e continua sendo **não confiável** (os prompts da T14 devem delimitá-lo);
+  - a chave da Tavily fica fora do `repr` e das mensagens de erro;
+  - **risco residual documentado:** DNS rebinding entre a checagem e a conexão. A mitigação completa (conectar no IP checado) fica para o container isolado de tools (T19).
+- **Problemas encontrados e corrigidos:**
+  1. O `User-Agent` tinha acentos, e header HTTP só aceita ASCII: toda busca de site falharia em produção. Os testes pegaram o erro.
+  2. O `detect-secrets` apontou a URL `user:senha@` do teste de SSRF (falso positivo, marcado com `pragma`).

@@ -13,6 +13,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
+    "trafilatura>=2.0",
 ]
 
 [dependency-groups]
@@ -27,6 +28,7 @@ dev = [
     "detect-secrets>=1.5",
     "pre-commit>=4.0",
     "respx>=0.22",
+    "types-lxml>=2026.2.16",
 ]
 
 [build-system]

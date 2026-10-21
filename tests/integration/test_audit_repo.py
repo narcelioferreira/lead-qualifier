@@ -5,23 +5,19 @@ e apaga o banco no fim: o banco de desenvolvimento nunca é tocado.
 """
 
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from decimal import Decimal
 from pathlib import Path
 
-import psycopg
 import pytest
 from alembic import command
-from alembic.config import Config
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 from app.audit.db import create_engine as create_async_engine
 from app.audit.db import session_factory
 from app.audit.repository import AuditError, AuditRepository, StepRecord
-from app.config import Settings
 from app.routing.cost import Usage
 from app.schemas import (
     CriterionScore,
@@ -30,6 +26,7 @@ from app.schemas import (
     QualificationResult,
     Tier,
 )
+from tests.integration.conftest import alembic_config
 
 pytestmark = [pytest.mark.integration, pytest.mark.anyio]
 
@@ -43,44 +40,6 @@ LEAD = LeadInput(
     message="Queremos proposta para 85 caminhões.",
     source="demo_request",
 )
-
-
-@pytest.fixture(scope="module")
-def anyio_backend() -> str:
-    return "asyncio"
-
-
-@pytest.fixture(scope="module")
-def database_url() -> Iterator[str]:
-    try:
-        base = make_url(Settings().database_url.get_secret_value())
-    except ValidationError as exc:
-        pytest.skip(f".env incompleto: {exc.error_count()} erro(s)")
-    admin_dsn = base.set(drivername="postgresql").render_as_string(hide_password=False)
-    name = f"lead_qualifier_test_{uuid.uuid4().hex[:8]}"
-    try:
-        admin = psycopg.connect(admin_dsn, autocommit=True, connect_timeout=3)
-    except psycopg.OperationalError:
-        pytest.skip("Postgres não está rodando (docker compose up -d postgres)")
-    with admin:
-        admin.execute(f'CREATE DATABASE "{name}"')
-        try:
-            yield base.set(database=name).render_as_string(hide_password=False)
-        finally:
-            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
-
-
-def _alembic(url: str) -> Config:
-    config = Config(str(ROOT / "alembic.ini"))
-    config.attributes["url"] = url
-    config.attributes["configure_logger"] = False
-    return config
-
-
-@pytest.fixture(scope="module")
-def migrated(database_url: str) -> str:
-    command.upgrade(_alembic(database_url), "head")
-    return database_url
 
 
 @pytest.fixture
@@ -224,11 +183,11 @@ def test_database_constraints_and_cascade(migrated: str) -> None:
 
 
 def test_models_match_migrations(migrated: str) -> None:
-    command.check(_alembic(migrated))  # falha se o modelo divergir do schema migrado
+    command.check(alembic_config(migrated))  # falha se o modelo divergir do schema migrado
 
 
 def test_downgrade_and_upgrade_again(migrated: str) -> None:
-    config = _alembic(migrated)
+    config = alembic_config(migrated)
     engine = create_engine(migrated)
     command.downgrade(config, "base")
     with engine.connect() as conn:

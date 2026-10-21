@@ -192,6 +192,7 @@ Autenticação por header `X-API-Key`. Documentação OpenAPI automática.
 - Guardrail com SLM antes de qualquer chamada paga.
 - Pesquisa limitada a dados públicos da **empresa**: sem scraping de LinkedIn e sem enriquecimento de dados pessoais. O SLM local processa a mensagem sem enviá-la a terceiros.
 - Segredos em `.env`, nunca versionados. Containers com usuário não-root.
+- **SSRF na busca de sites:** cada requisição e cada redirect só seguem se o host resolver apenas para IPs públicos (portas 80/443, sem credenciais, até 2 MB de HTML). Risco residual: DNS rebinding entre a checagem e a conexão, a mitigar no container isolado de tools.
 
 ---
 
