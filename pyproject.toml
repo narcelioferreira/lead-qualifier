@@ -15,6 +15,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "trafilatura>=2.0",
     "langgraph>=1.0",
+    "mcp>=2.3,<3",  # API 2.x: MCPServer (antigo FastMCP)
+    "uvicorn>=0.32",
 ]
 
 [dependency-groups]

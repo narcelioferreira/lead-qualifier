@@ -1,0 +1,16 @@
+# Nada de segredos, caches ou artefatos locais no contexto do build.
+.env
+.env.*
+.git
+.venv
+**/__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
+htmlcov
+.coverage
+evals/runs
+evals/cache
+evals/annotations
+docs
+tests

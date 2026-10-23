@@ -31,6 +31,29 @@ services:
       - ollama:/root/.ollama
     restart: unless-stopped
 
+  tools-mcp:
+    # Servidor MCP `lead-tools` (T19). Recebe só as chaves que usa (ASI03): sem API_KEY nem
+    # GROQ_API_KEY. Uso: `docker compose up -d --build tools-mcp`.
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    environment:
+      TOOLS_MCP_TOKEN: ${TOOLS_MCP_TOKEN:?defina TOOLS_MCP_TOKEN no .env}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      HUBSPOT_TOKEN: ${HUBSPOT_TOKEN:-}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lead}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-lead_qualifier}
+      TOOLS_MCP_ALLOWED_HOSTS: 127.0.0.1:*,localhost:*,tools-mcp:*
+    ports:
+      - "127.0.0.1:${TOOLS_MCP_PORT:-8001}:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    # Sem `no-new-privileges`: no Docker do snap ele impede o exec do Python. A imagem não tem
+    # binários setuid/setgid (Dockerfile.tools), então o efeito é o mesmo.
+    restart: unless-stopped
+
 volumes:
   pgdata:
   ollama:

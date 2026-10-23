@@ -35,7 +35,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | D. Grafo MVP e baseline | T12–T15: ferramentas de pesquisa, grafo, nós reais, runner de avaliação | ✅ |
 | | T16: baseline × MVP no split dev, ajuste de prompt e rodada única no test | ✅ |
 | E. Integrações | T17–T18: propriedades `ai_*` e cliente HubSpot idempotente (sem duplicar registros) | ✅ |
-| | T19–T22: servidores MCP, API FastAPI, Docker | ⏳ |
+| | T19: servidor MCP `lead-tools` (6 tools, Bearer token, container sem root) | ✅ |
+| | T20–T22: grafo via MCP e `write_to_crm`, API FastAPI, Docker | ⏳ |
 | F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
@@ -180,6 +181,7 @@ make check                              # gate completo: lint, tipos, testes, se
 uv run pytest -m integration            # testes contra serviços reais (Groq, Tavily, Ollama, Postgres)
 uv run python scripts/qualify.py L024   # qualifica um lead do split dev e mostra o resultado auditado
 uv run python -m evals.run --split dev --config mvp   # avaliação (retomável com --resume)
+docker compose up -d --build tools-mcp  # servidor MCP lead-tools em http://127.0.0.1:8001/mcp (Bearer TOOLS_MCP_TOKEN)
 ```
 
 Se a porta 5432 já estiver em uso, defina `POSTGRES_PORT` no `.env` e ajuste o `DATABASE_URL`.

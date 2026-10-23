@@ -139,17 +139,17 @@ Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e cu
 ---
 
 ## 6. MCP
-**Servidor `lead-tools`** (container `tools-mcp`, SDK oficial `mcp` com FastMCP, transporte Streamable HTTP):
+**Servidor `lead-tools`** (container `tools-mcp`, SDK oficial `mcp` 2.x com `MCPServer`, o antigo FastMCP, transporte Streamable HTTP em `/mcp`, Bearer token obrigatório e proteção contra DNS rebinding):
 
 | Tool | Descrição |
 |---|---|
 | `search_company_web(query)` | Tavily, com cache em Postgres |
 | `fetch_company_site(domain)` | Home e página "sobre", extraídas com `trafilatura` e truncadas |
 | `search_knowledge_base(query, filters)` | Busca no pgvector |
-| `hubspot_upsert_company(domain, props)` | Upsert da empresa |
-| `hubspot_upsert_contact(email, props)` | Upsert do contato |
+| `hubspot_upsert_company(company)` | Upsert da empresa (nome, domínio e `ai_*`, validados pela allowlist) |
+| `hubspot_upsert_contact(contact)` | Upsert do contato (e-mail, cargo e `ai_*`) |
 | `hubspot_associate(contact_id, company_id)` | Associa contato e empresa |
-| `hubspot_create_note(object_ids, body)` | Cria a Note com a justificativa |
+| `hubspot_create_note(body, company_ids, contact_ids)` | Cria a Note com a justificativa (HTML escapado) |
 
 **Servidor `lead-qualifier`** (montado em `/mcp` na própria API), com as tools `qualify_lead(lead)` e `get_run(run_id)`. O agente pode ser usado diretamente no Claude Desktop, no Cursor ou no MCP Inspector.
 

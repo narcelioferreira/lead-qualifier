@@ -497,3 +497,32 @@
   - o HubSpot recusa e-mail em `.example` (`INVALID_EMAIL`). O teste usa `example.com`, também reservado (RFC 2606);
   - **criação automática de empresas pelo HubSpot:** ao gravar o contato `compras.t18@example.com`, o próprio HubSpot criou a empresa `example.com` e associou o contato a ela (configuração "criar e associar empresas a contatos"). Com essa configuração ligada, o domínio do e-mail pode gerar uma empresa paralela, fora do controle do agente. Recomendação: desligá-la na conta (Configurações → Objetos → Empresas). A empresa `example.com` criada no teste deve ser apagada na interface, porque o agente não tem escopo de exclusão, de propósito;
   - as mensagens de erro 400 do HubSpot podem ecoar o valor rejeitado (por exemplo, o e-mail), truncado em 200 caracteres. Na T20, os erros do `write_to_crm` gravados na auditoria devem passar pela mesma regra de dados pessoais.
+
+## T19: Servidor MCP `lead-tools`
+- `tools_mcp/server.py`: servidor com o **SDK oficial `mcp` 2.x** (`MCPServer`, o antigo FastMCP, renomeado na versão 2), em Streamable HTTP no caminho `/mcp`. Expõe 6 tools:
+  - `search_company_web` e `fetch_company_site` (T12), anotadas como só leitura;
+  - `hubspot_upsert_company`, `hubspot_upsert_contact`, `hubspot_associate` e `hubspot_create_note` (T18), anotadas como escrita não destrutiva (a Note não é idempotente).
+  - Os argumentos usam os mesmos modelos Pydantic dos clientes, então o schema MCP já sai com a allowlist (por exemplo, `hubspot_upsert_company(company: CompanyProps)`).
+  - `search_knowledge_base` entra na T24.
+- `tools_mcp/config.py` (`ToolsSettings`): configuração própria do container de tools, que recebe só `TOOLS_MCP_TOKEN`, `TAVILY_API_KEY`, `HUBSPOT_TOKEN` e `DATABASE_URL`. A API não recebe essas chaves, e o container de tools não recebe `API_KEY` nem `GROQ_API_KEY`.
+- `Dockerfile.tools`:
+  - multi-stage, com `uv` 0.13.5 e `python:3.12.15-slim-bookworm` fixados por digest (consultados direto nos registries);
+  - `uv sync --locked --no-dev`, usuário não-root (uid 10001) e healthcheck.
+- **Serviço `tools-mcp` no compose:** porta só em `127.0.0.1`, `read_only`, `cap_drop: ALL`, imagem sem binários setuid/setgid (no lugar do `no-new-privileges`, que no Docker do snap fazia o exec do Python falhar com "operation not permitted"), `DATABASE_URL` apontando para o serviço `postgres` e variáveis passadas uma a uma (sem `env_file`). Também há um `.dockerignore` que deixa `.env`, `.git` e as rodadas fora do contexto do build.
+- **Dependências:** `mcp>=2.3,<3` (a API 2.x é incompatível com a 1.x) e `uvicorn`. Conferi antes que o `langchain-mcp-adapters` 0.3.1 (T20) resolve junto com o `mcp` 2.3.0.
+- **Teste:**
+  - `tests/unit/test_mcp_server.py` (21 testes, cliente MCP in-process e respx): listagem e anotações das tools, as 6 tools com mocks, fixture `.example` sem rede, SSRF bloqueado via MCP, integração sem chave, argumentos inválidos (campo fora da allowlist, tier fora da ontologia, path traversal no ID, ID não numérico) sem chamar o HubSpot, erro esperado com mensagem e sem token, erro inesperado sem detalhe interno, 401 sem token ou com token errado, `Host` fora da allowlist com 421 e token fraco recusado na configuração.
+  - `test_supply_chain.py`: serviços com `build` precisam de `FROM` fixado por digest e de `USER` não-root, e o `.dockerignore` precisa excluir `.env` e `.git`.
+  - **Mutação:** desligar a autenticação, a proteção contra DNS rebinding, o repasse de erros esperados ou a checagem de integração ausente derruba pelo menos 1 teste em cada caso.
+  - **Servidor real** (uvicorn local, token temporário): as 6 tools foram listadas por HTTP; `fetch_company_site` na fixture e `search_company_web` real na Tavily funcionaram (com cache no Postgres); uma requisição sem token recebeu 401.
+  - **Container** (`docker compose up -d --build tools-mcp`): build ok, serviço `healthy`, 401 sem token e `search_company_web` chamado pelo MCP Inspector v2 (Streamable HTTP com Bearer). No Docker do snap, o `no-new-privileges` fazia o exec do Python falhar; foi trocado pela remoção de setuid/setgid na imagem, com teste.
+  - `make check`: 485 testes (cobertura de 95%), ruff, mypy strict, bandit, detect-secrets e pip-audit sem vulnerabilidades com as dependências novas.
+- **Segurança (ASI02/ASI03):**
+  - **Bearer token obrigatório** (32 caracteres ou mais, comparado em tempo constante). As tools escrevem no CRM, então o servidor não sobe sem token (fail closed);
+  - proteção contra DNS rebinding do SDK, com allowlist do header `Host`;
+  - erros inesperados não vazam detalhe interno, porque o SDK devolve só o nome da tool;
+  - o container roda sem root, com sistema de arquivos só leitura e sem capabilities.
+- **Problemas corrigidos e limitações:**
+  - o `uv` do snap não roda neste ambiente. As dependências foram adicionadas com um `uv` avulso do PyPI, e o `uv.lock` foi gerado da mesma forma;
+  - pelo mesmo motivo, o `docker` não roda aqui. Os digests foram consultados na API dos registries, e **o build da imagem é conferido pelo autor**;
+  - a validação do `Host` acontece dentro do gerenciador de sessões do SDK, que precisa estar rodando. O teste HTTP sobe esse gerenciador em vez de mockar.
