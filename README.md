@@ -87,9 +87,33 @@ As ferramentas do agente ficam atrás de um servidor **MCP** (SDK oficial `mcp` 
 
 Nenhuma tool apaga dados. O servidor exige **token Bearer** (sem ele, nem sobe), bloqueia `Host` fora da allowlist (DNS rebinding) e roda sem root, com disco só leitura, sem capabilities e sem binários setuid.
 
-![MCP Inspector chamando search_company_web no servidor lead-tools](docs/img/t19-mcp-inspector.png)
+Demonstração com o cliente MCP oficial, contra o container no ar (`uv run python scripts/mcp_demo.py`). O token vem do `.env` e não aparece na saída:
 
-*MCP Inspector v2 conectado ao container `tools-mcp` (`http://127.0.0.1:8001/mcp`, Bearer) chamando `search_company_web`.*
+```text
+1) POST http://127.0.0.1:8001/mcp sem token → 401 {"error":"unauthorized"}
+
+2) Conectado com Bearer token. Tools expostas (6):
+   - search_company_web       Busca dados públicos de uma empresa na web (Tavily, com cache).
+   - fetch_company_site       Lê a home e a página "sobre" do site da empresa (só IP público, texto…
+   - hubspot_upsert_company   Cria ou atualiza a empresa no HubSpot pelo domínio, sem duplicar.
+   - hubspot_upsert_contact   Cria ou atualiza o contato no HubSpot pelo e-mail, sem duplicar.
+   - hubspot_associate        Associa o contato à empresa (associação padrão do HubSpot).
+   - hubspot_create_note      Cria uma Note com a justificativa, associada à empresa e/ou ao contat…
+
+3) search_company_web(query="Ciamed Distribuidora de Medicamentos")
+   5 resultados (cache: False), primeiros 3:
+   • Ciamed Distribuidora de Medicamentos
+     https://br.linkedin.com/company/ciamed-distribuidora-de-medicamentos-ltda-
+     Description: A essência da Ciamed está nas pessoas. São mais de 19 anos de história! Começamos a nossa trajet…
+   • Ciamed Distribuidora de Medicamentos
+     https://www.ciamed.com.br/
+     A Ciamed é uma empresa certificada pela ANVISA em "Boas Práticas de Distribuição e Armazenagem" e nos preocup…
+   • Ciamed Distribuidora de Medicamentos
+     https://www.ciamed.com.br/contato.html
+     A Ciamed é uma empresa certificada pela ANVISA em "Boas Práticas de Distribuição e Armazenagem" e nos preocup…
+```
+
+O MCP Inspector v2 não conecta a este servidor, e isso é esperado: ele roda no navegador, e o preflight CORS (`OPTIONS`) não leva o header `Authorization`, então recebe 401. Abrir CORS só para a demo afrouxaria a autenticação.
 
 ---
 
@@ -260,3 +284,4 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 | [CHANGELOG](docs/CHANGELOG.md) | O que foi feito em cada task, decisões e problemas corrigidos |
 
 > **Sobre o dataset:** as empresas são reais e públicas; cargos, mensagens e e-mails são inventados. As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (gpt-oss, via Groq), para evitar o viés de o modelo avaliar o próprio texto.
+

@@ -148,6 +148,7 @@ Groq API key (plano gratuito) · Tavily API key · HubSpot developer test accoun
 - **Fazer:** `Dockerfile.api` (multi-stage, usuário não-root) e compose completo (api, tools-mcp, postgres, ollama) com healthchecks.
 - **Testar:** `scripts/smoke_e2e.sh`, que sobe tudo com `docker compose up -d`, faz um `curl` de qualificação, faz polling e confere o tier no resultado e o registro no HubSpot.
 - **Aceite:** o smoke passa a partir de um clone limpo. 📸 GIF da demo.
+- **Demo para quem não clona (recrutador):** workflow no Actions disparado pelo autor (`workflow_dispatch`) em **modo offline**: sites `.example` das fixtures e respostas do LLM gravadas, sem secrets no GitHub e sem chamar API real. O resultado (tier, justificativa por critério, injeção da L005 bloqueada e 401 sem token) sai no *Job Summary*, e o link da execução vai para o README e para o post. Só quem tem escrita no repositório dispara um workflow, então o recrutador vê a execução gravada. Uma demo hospedada e aberta ficou de fora: qualquer pessoa gastaria a cota da Groq e da Tavily e poderia tentar injeção contra o HubSpot.
 
 ---
 

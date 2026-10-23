@@ -515,7 +515,7 @@
   - `test_supply_chain.py`: serviços com `build` precisam de `FROM` fixado por digest e de `USER` não-root, e o `.dockerignore` precisa excluir `.env` e `.git`.
   - **Mutação:** desligar a autenticação, a proteção contra DNS rebinding, o repasse de erros esperados ou a checagem de integração ausente derruba pelo menos 1 teste em cada caso.
   - **Servidor real** (uvicorn local, token temporário): as 6 tools foram listadas por HTTP; `fetch_company_site` na fixture e `search_company_web` real na Tavily funcionaram (com cache no Postgres); uma requisição sem token recebeu 401.
-  - **Container** (`docker compose up -d --build tools-mcp`): build ok, serviço `healthy`, 401 sem token e `search_company_web` chamado pelo MCP Inspector v2 (Streamable HTTP com Bearer). No Docker do snap, o `no-new-privileges` fazia o exec do Python falhar; foi trocado pela remoção de setuid/setgid na imagem, com teste.
+  - **Container** (`docker compose up -d --build tools-mcp`): build ok, serviço `healthy` e 401 sem token. A chamada pelo MCP Inspector v2 não funcionou (ver a entrada da demonstração abaixo). No Docker do snap, o `no-new-privileges` fazia o exec do Python falhar; foi trocado pela remoção de setuid/setgid na imagem, com teste.
   - `make check`: 485 testes (cobertura de 95%), ruff, mypy strict, bandit, detect-secrets e pip-audit sem vulnerabilidades com as dependências novas.
 - **Segurança (ASI02/ASI03):**
   - **Bearer token obrigatório** (32 caracteres ou mais, comparado em tempo constante). As tools escrevem no CRM, então o servidor não sobe sem token (fail closed);
@@ -526,3 +526,11 @@
   - o `uv` do snap não roda neste ambiente. As dependências foram adicionadas com um `uv` avulso do PyPI, e o `uv.lock` foi gerado da mesma forma;
   - pelo mesmo motivo, o `docker` não roda aqui. Os digests foram consultados na API dos registries, e **o build da imagem é conferido pelo autor**;
   - a validação do `Host` acontece dentro do gerenciador de sessões do SDK, que precisa estar rodando. O teste HTTP sobe esse gerenciador em vez de mockar.
+
+## T19 (complemento): demonstração do `lead-tools` pelo terminal
+- `scripts/mcp_demo.py`: com o cliente oficial do SDK `mcp`, mostra a chamada sem token recusada (401), lista as 6 tools e faz uma chamada real a `search_company_web`. Só usa tools de leitura, então nada é escrito no HubSpot. Não depende do cliente da T20 (`app/mcp_client.py`).
+- **Por que não o MCP Inspector:** o Inspector v2 roda no navegador e falhou com "Failed to fetch". O preflight CORS (`OPTIONS`) não leva o header `Authorization`, o `BearerAuth` responde 401 e o navegador cancela a chamada. Para o Inspector funcionar seria preciso liberar `OPTIONS` sem token e abrir CORS, o que afrouxa a autenticação só por causa de um print, então essa opção foi descartada.
+- **Correção:** a entrada da T19 dizia que `search_company_web` tinha sido chamado pelo Inspector. O print mostrava só a tela inicial, com os servidores de exemplo desconectados. A entrada foi corrigida, e o README passou a mostrar a saída real do script no lugar da imagem.
+- **Decisão (plano da T22):** uma demo para recrutador via `workflow_dispatch` só funciona como execução **gravada**, porque só quem tem escrita no repositório dispara um workflow. Ela foi registrada na T22 em modo offline (fixtures e respostas do LLM gravadas, sem secrets no GitHub e com o resultado no *Job Summary*).
+- **Teste:** o script rodou contra o container `tools-mcp` no ar: 401 sem token, 6 tools listadas e 5 resultados reais da Tavily para a Ciamed.
+- **Segurança:** o cliente lê só `TOOLS_MCP_TOKEN` (não recebe as chaves da Tavily nem do HubSpot, ASI03), o token não é impresso e a saída do terminal mostra o controle de autenticação funcionando.
