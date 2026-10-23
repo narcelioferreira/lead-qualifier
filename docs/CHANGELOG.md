@@ -444,5 +444,11 @@
 - **Falhas registradas como erro:**
   - **MVP:** a primeira tentativa parou no limite diário de tokens da Groq em 26/30 (3 leads com 429 e 1 sem rodar). No dia seguinte, a **mesma rodada** foi completada com `--retry-failed`, e só os 4 leads que faltavam foram executados. Refazer falha de infraestrutura não muda o resultado de nenhum lead já classificado.
   - **Baseline:** 3 leads (L019, L022, L047) falharam com `output_parse_failed` da Groq (o modelo gerou uma saída que não passou no schema). Isso é **falha do modelo**, e não da infraestrutura, então **não foi refeita** e conta como erro, como manda a métrica.
-- **Teste:** os relatórios foram gerados sem erro; os tokens e o custo pelo preço de lista estão em cada relatório. A conferência dos tokens contra o painel de uso da Groq (critério de diferença abaixo de 5%) é feita pelo autor no painel.
+- **Teste:** os relatórios foram gerados sem erro; os tokens e o custo pelo preço de lista estão em cada relatório. A conferência dos tokens contra o painel de uso da Groq (critério de diferença abaixo de 5%) foi feita pelo autor no painel e está no README (seção Avaliação):
+  - 22/10: 166.934 tokens no runner × 166.900 no painel (0,02%);
+  - 23/10: 66.515 × 66.500 (0,02%);
+  - 21/10: 181.041 × 203.455 (11,0%), por causa de tráfego fora do runner (testes de integração, execuções avulsas e tentativas interrompidas);
+  - total: 414.490 × 436.855 (5,1%).
+  
+  O runner está calibrado. Nas próximas avaliações, usar uma chave de API dedicada às rodadas.
 - **Segurança:** o split test foi usado uma única vez por configuração e só com `--confirm-test`; os arquivos de previsão não têm dados pessoais; nenhum prompt foi alterado depois de olhar o test (`integrity.lock.json` intacto).

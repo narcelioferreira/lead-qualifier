@@ -55,7 +55,7 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T15: `evals/metrics.py` (kappa conferido contra o sklearn, IC por bootstrap) e `evals/run.py` (JSONL com retomada, pausa, split test protegido por `--confirm-test`). 341 testes.
 - ✅ T16: dev (baseline 70% / κ 0,655; MVP v2 com segurança 95% / κ 0,961) e rodada **única** no test: baseline 53,3% / κ 0,475 (3 falhas de schema da Groq contadas como erro) × MVP 60,0% / κ 0,560, ataques 1/4 × 3/4. `01-baseline.md` e `02-mvp.md`. Erros do test só como achado (B→A em 5 leads, homônimo, estrangeira, spam L034 → C).
 - ✅ **Segurança de agentes** (OWASP ASI 2026 + AST): integridade de prompts/config com fail closed (`app/integrity.py`, `scripts/lock_config.py`), orçamento por execução, detector determinístico de injeção, saneamento da saída, Actions por SHA e imagens por digest, métrica de ataques e `docs/06-seguranca-agentes.md`. 415 testes + 20 de integração.
-- ⏭️ **Próximo passo:** T17 (setup do HubSpot). Pendente do autor: conferir os tokens da T16 no painel da Groq (< 5%) e decidir as PRs do Dependabot (#2, #3, #4), a PR #1 e a branch `ci-failure-check`. Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
+- ⏭️ **Próximo passo:** T17 (setup do HubSpot). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash

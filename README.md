@@ -101,6 +101,21 @@ O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd
 
 Os relatórios ficam em [`evals/reports/`](evals/reports/): [`01-baseline.md`](evals/reports/01-baseline.md), [`02-mvp.md`](evals/reports/02-mvp.md) e as rodadas do dev em [`dev/`](evals/reports/dev/).
 
+**Auditoria de tokens (T16): runner × painel da Groq**
+
+Critério de aceite: a diferença entre os tokens registrados pelo runner (`evals/runs/*.jsonl`, somados pela data de `finished_at`) e os tokens do painel da Groq (Console → Usage → Activity) deve ficar abaixo de 5%.
+
+| Dia | Rodadas do runner | Runner | Painel da Groq (20b + 120b) | Diferença |
+|---|---|---:|---:|---:|
+| 21/10 | baseline, MVP v1 e MVP v2 no dev | 181.041 | 203.455 | 11,0% |
+| 22/10 | MVP v2 com segurança no dev; MVP no test (29 leads) | 166.934 | 166.900 | 0,02% |
+| 23/10 | baseline no test; MVP no test (4 leads retomados) | 66.515 | 66.500 | 0,02% |
+| **Total** | | **414.490** | **436.855** | **5,1%** |
+
+- **A contabilidade do runner está calibrada:** nos dias em que só o runner usou a chave (22 e 23/10), a diferença é de 0,02%, abaixo do arredondamento do painel (centenas de tokens).
+- **O dia 21/10 tem tráfego fora do runner:** testes de integração contra a Groq (os 355 tokens do `gpt-oss-120b` vêm daí), execuções avulsas e tentativas interrompidas. Esse tráfego não passa pelo runner, e por isso o total consolidado fica em 5,1%, logo acima do limite.
+- **Conclusão:** o critério é atendido para o que o runner mede, com 0,02% nos dias sem outro tráfego. Para as próximas avaliações, a medida é usar uma chave de API dedicada às rodadas, para que o painel e o runner meçam a mesma coisa.
+
 ---
 
 ## Segurança
