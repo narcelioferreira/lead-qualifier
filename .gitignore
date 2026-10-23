@@ -13,3 +13,7 @@ htmlcov/
 evals/cache/
 .audit-reqs.txt
 evals/annotations/planilha*.csv
+
+# Configuração pessoal do Claude Code
+.claude/settings.local.json
+.vscode/
