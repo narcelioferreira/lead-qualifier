@@ -33,7 +33,7 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | B. Dataset e gabarito | T08–T09: 50 leads e rotulagem humana | ✅ |
 | C. Infraestrutura de LLM | T10–T11: clientes Groq e Ollama, custo, Postgres + pgvector, auditoria | ✅ |
 | D. Grafo MVP e baseline | T12–T15: ferramentas de pesquisa, grafo, nós reais, runner de avaliação | ✅ |
-| | T16: baseline × MVP no split dev, ajuste de prompt e rodada única no test | 🔄 em andamento |
+| | T16: baseline × MVP no split dev, ajuste de prompt e rodada única no test | ✅ |
 | E. Integrações | T17–T23: HubSpot, servidores MCP, API FastAPI, Docker | ⏳ |
 | F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
@@ -88,7 +88,18 @@ O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd
   - custo, tokens e latência p50/p95 por lead.
 - **Ablações planejadas:** baseline (prompt único, o LLM decide o tier) → MVP (ontologia + score em código) → + RAG → + roteamento e SLM → só o modelo maior (referência de custo).
 
-Os relatórios ficam em [`evals/reports/`](evals/reports/).
+**Primeiro resultado (T16, rodada única no test, 30 leads):**
+
+| Configuração | Acurácia (IC 95%) | Kappa ponderado (IC 95%) | Ataques desqualificados | Custo médio/lead |
+|---|---|---|---:|---:|
+| baseline (o LLM decide o tier) | 53,3% (33–70%) | 0,475 (0,17–0,73) | 1/4 | US$ 0,00015 |
+| MVP (ontologia + score em código) | **60,0% (43–77%)** | **0,560 (0,31–0,77)** | **3/4** | US$ 0,00036 |
+
+- O MVP é melhor nas duas métricas, mas com 30 leads os intervalos se sobrepõem: a diferença ainda não é conclusiva. O ganho claro é em segurança: no baseline, duas injeções receberam tier A.
+- No dev, o MVP chegou a 95%. A queda para 60% no test mostra o quanto do ajuste de prompt não generalizou, e nenhum ajuste foi feito com base no test.
+- Análise de erros e decisões no [CHANGELOG](docs/CHANGELOG.md) e no [material da T16](docs/linkedin/t16-primeiro-numero.md).
+
+Os relatórios ficam em [`evals/reports/`](evals/reports/): [`01-baseline.md`](evals/reports/01-baseline.md), [`02-mvp.md`](evals/reports/02-mvp.md) e as rodadas do dev em [`dev/`](evals/reports/dev/).
 
 ---
 

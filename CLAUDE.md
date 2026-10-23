@@ -53,9 +53,9 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T13: state e grafo LangGraph (`app/graph/`) com nós injetáveis; `validate_input` e `compute_score` já reais, demais em stub. Diagrama em `docs/grafo.mmd`. 276 testes.
 - ✅ T14: nós reais do MVP (`app/graph/nodes/mvp.py`, prompts `app/prompts/v1/`), auditoria no Postgres, `scripts/qualify.py` (só dev). 3 execuções reais auditadas. **Achado:** a injeção da L005 não foi detectada pelo mini (o score foi contido pelo código) → tratar no ajuste do dev (T16) e no guardrail (T28).
 - ✅ T15: `evals/metrics.py` (kappa conferido contra o sklearn, IC por bootstrap) e `evals/run.py` (JSONL com retomada, pausa, split test protegido por `--confirm-test`). 341 testes.
-- 🟡 **T16 em andamento:** dev feito (baseline 70% / κ 0,655; MVP v1 70% / κ 0,715; MVP v2 80% / κ 0,839). Temperatura 0, baseline, runner com `--retry-failed` e disjuntor.
+- ✅ T16: dev (baseline 70% / κ 0,655; MVP v2 com segurança 95% / κ 0,961) e rodada **única** no test: baseline 53,3% / κ 0,475 (3 falhas de schema da Groq contadas como erro) × MVP 60,0% / κ 0,560, ataques 1/4 × 3/4. `01-baseline.md` e `02-mvp.md`. Erros do test só como achado (B→A em 5 leads, homônimo, estrangeira, spam L034 → C).
 - ✅ **Segurança de agentes** (OWASP ASI 2026 + AST): integridade de prompts/config com fail closed (`app/integrity.py`, `scripts/lock_config.py`), orçamento por execução, detector determinístico de injeção, saneamento da saída, Actions por SHA e imagens por digest, métrica de ataques e `docs/06-seguranca-agentes.md`. 415 testes + 20 de integração.
-- ⏭️ **Próximo passo:** rodar o MVP v2 no dev de novo com os controles de segurança (e medir variância), depois a rodada **única** do test para `baseline` e `mvp` (`--confirm-test`), gerando `01-baseline.md` e `02-mvp.md`. Mudou prompt? Crie `v3` e rode `scripts/lock_config.py`.
+- ⏭️ **Próximo passo:** T17 (setup do HubSpot). Pendente do autor: conferir os tokens da T16 no painel da Groq (< 5%) e decidir as PRs do Dependabot (#2, #3, #4), a PR #1 e a branch `ci-failure-check`. Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash

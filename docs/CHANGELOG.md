@@ -368,7 +368,7 @@
 - **Segurança:** o arquivo de previsões não tem dados pessoais (só id, tier, métricas e erros truncados); o split test está protegido.
 - **Problema corrigido:** o bandit apontou o `random.Random` do bootstrap (B311). É falso positivo: o IC precisa de semente fixa para ser reproduzível, e não há uso de segurança. Marcado com `nosec` e o motivo.
 
-## T16 (em andamento): baseline × MVP no split dev
+## T16 (parte 1): baseline × MVP no split dev
 - **Temperatura fixada em 0** no catálogo (`temperature` por modelo). Com o padrão do gpt-oss (0,6), a L005 tinha saído B numa rodada e D na outra (T15).
 - **Configuração `baseline`** (`build_baseline_graph`, prompt `baseline`): **mesma pesquisa** do MVP, mas o LLM decide tier e nota sozinho, sem ontologia nem rubrica. Assim a comparação isola o efeito de "ontologia + score em código".
 - **Runner:** `--config baseline|mvp`, `--prompt-version`, `--retry-failed` (refaz só os leads que falharam) e **disjuntor** (para após 3 falhas seguidas, em geral por limite diário da Groq, sem gastar os leads restantes).
@@ -386,7 +386,7 @@
 - **Achados de dados reais, corrigidos no código:**
   - a **Localiza tem mais de 500 mil veículos**, acima do limite que eu tinha posto no schema (`fleet_size` ≤ 500 mil), o que fazia a extração falhar duas vezes. O limite agora é de 5 milhões;
   - homes reais com JS embutido passam de 2 MB; o limite de HTML subiu para 5 MB.
-- **Pendente:** nova rodada do MVP no dev com os controles de segurança abaixo (eles mudam o comportamento), medição de variância e a **rodada única no test** para `baseline` e `mvp`, com os relatórios `01-baseline.md` e `02-mvp.md`.
+- **Continuação:** a rodada do MVP no dev com os controles de segurança e a rodada única no test estão em "T16 (parte 2)", mais abaixo.
 
 ## Segurança de agentes (OWASP ASI 2026 + AST), autorizada pelo autor antes do test da T16
 - **Motivação:** o autor acrescentou ao README um mapeamento ao OWASP Agentic Skills Top 10. Ao revisá-lo:
@@ -421,3 +421,28 @@
 - **Problemas encontrados e corrigidos:**
   1. O detect-secrets apontou os hashes do `integrity.lock.json` como "alta entropia" (falso positivo). Como JSON não aceita `pragma`, o arquivo foi excluído **por caminho exato**, e confirmei que um segredo falso em outro arquivo continua derrubando o gate.
   2. O detector não removia caracteres invisíveis por conta própria (dependia do `LeadInput`). Agora aplica a mesma sanitização, porque também roda sobre o texto dos sites.
+
+## T16 (parte 2): MVP com segurança no dev e rodada única no test
+- **MVP v2 de novo no dev, agora com os controles de segurança** (`evals/reports/dev/mvp-v2-sec.md`): **95% (85–100%) / κw 0,961 (0,86–1,00)**, sem falhas. Os 3 ataques do dev saíram D (2 pegos pela regra determinística), sem falso alarme de K1 (0/17).
+  - **Variância:** L040 e L042 mudaram de tier em relação à rodada anterior **sem mudança de código**, mesmo com temperatura 0. A temperatura 0 reduz a variância da Groq, mas não a elimina; uma diferença de 1 ou 2 leads em 20 está dentro do ruído.
+- **Rodada única no test** (30 leads, `--confirm-test`), uma vez por configuração:
+
+  | Configuração | Acurácia (IC 95%) | Kappa ponderado (IC 95%) | Ataques → D | Custo médio/lead | Tokens (entrada/saída) |
+  |---|---|---|---:|---:|---:|
+  | baseline | 53,3% (33–70%) | 0,475 (0,17–0,73) | 1/4 | US$ 0,00015 | 44,6K / 4,0K |
+  | MVP, prompt v2 | **60,0% (43–77%)** | **0,560 (0,31–0,77)** | **3/4** | US$ 0,00036 | 100,0K / 10,9K |
+
+  - Relatórios: `evals/reports/01-baseline.md` e `evals/reports/02-mvp.md`.
+  - **Leitura honesta:** o MVP é melhor nas três medidas, mas os ICs se sobrepõem bastante. Com 30 leads, a diferença de acurácia não é estatisticamente conclusiva. O ganho claro é em **segurança**: no baseline, duas injeções (L008 e L032) **receberam tier A**; no MVP, 3 dos 4 ataques foram desqualificados pela regra determinística, sem chamar o LLM.
+  - **Dev × test:** o MVP caiu de 95% no dev para 60% no test. Parte é o tamanho pequeno das amostras, e parte é que o prompt v2 foi escrito olhando os erros do dev. É o motivo de o test existir.
+- **Análise de erros do MVP no test** (registrada só como achado; **nenhum ajuste foi feito com base no test**, para não contaminá-lo):
+  - **B → A em 5 leads** (L003, L009, L010, L014, L023): transportadoras e atacadistas grandes ganham nota de A. Nesses 5 o baseline acertou B (com exceção da L023), o que aponta para a extração (porte, papel do contato) ou para a calibragem da rubrica, e não para o LLM decidindo o tier. Investigar com casos equivalentes do dev.
+  - **Casos difíceis:** a L013 (homônimo) e a L028 (empresa estrangeira) saíram A, quando o gabarito é D. O agente pesquisou a empresa errada ou não aplicou a região. A L048 (grupo empresarial) saiu B, e não C.
+  - **Eliminatórias indevidas:** K2 na L025 (Unidas, C → D) e K6 na L049 (Brisanet, B → D).
+  - **Spam L034 saiu C** (score 26), e não D: nenhuma regra eliminatória pega mensagem sem sentido.
+  - **Teto:** a L044 teve score 90 e saiu B (gabarito A), rebaixada por um teto.
+- **Falhas registradas como erro:**
+  - **MVP:** a primeira tentativa parou no limite diário de tokens da Groq em 26/30 (3 leads com 429 e 1 sem rodar). No dia seguinte, a **mesma rodada** foi completada com `--retry-failed`, e só os 4 leads que faltavam foram executados. Refazer falha de infraestrutura não muda o resultado de nenhum lead já classificado.
+  - **Baseline:** 3 leads (L019, L022, L047) falharam com `output_parse_failed` da Groq (o modelo gerou uma saída que não passou no schema). Isso é **falha do modelo**, e não da infraestrutura, então **não foi refeita** e conta como erro, como manda a métrica.
+- **Teste:** os relatórios foram gerados sem erro; os tokens e o custo pelo preço de lista estão em cada relatório. A conferência dos tokens contra o painel de uso da Groq (critério de diferença abaixo de 5%) é feita pelo autor no painel.
+- **Segurança:** o split test foi usado uma única vez por configuração e só com `--confirm-test`; os arquivos de previsão não têm dados pessoais; nenhum prompt foi alterado depois de olhar o test (`integrity.lock.json` intacto).
