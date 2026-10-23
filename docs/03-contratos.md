@@ -34,6 +34,18 @@ Campos extras são **rejeitados** (`extra="forbid"`). Isso impede, por exemplo, 
 ## Evidence
 `source_type` (`web_search`, `company_site`, `knowledge_base`, `lead_message`), `source_url`, `snippet` (até 1.000 caracteres, sanitizado) e `retrieved_at`.
 
+## API (T21)
+| Rota | Entrada | Saída |
+|---|---|---|
+| `POST /v1/leads/qualify` | `LeadInput` (JSON, até 32 KB) | **202** `QualifyAccepted`: `run_id`, `status: "running"` e `status_url`, mais o header `Location` |
+| `GET /v1/runs/{run_id}` | UUID | `RunOut`: `status`, `tier`, `score`, `confidence`, `result` (`QualificationResult`), `cost_usd`, `latency_ms`, `crm_ids`, `errors`. Os passos internos ficam só na auditoria |
+| `GET /v1/runs` | `status` (um dos status da auditoria), `limit` 1–100, `offset` 0–10.000 | `RunList`: `items` (`RunSummary`), `limit` e `offset` |
+| `GET /health` | — | `Health`: `status` (`ok`/`degraded`) e `checks` (`ok`/`fail` por serviço). 503 se Postgres ou MCP falhar |
+
+Erros: **401** sem `X-API-Key` válida, **404** para run inexistente, **413** para corpo acima do limite, **422** com só `loc` e `type` de cada erro (sem o valor enviado) e **429** com `Retry-After` quando a fila enche.
+
+Status de uma execução: `running` (aceita, na fila ou rodando), `completed`, `needs_review`, `rejected` e `failed`.
+
 ## Settings (variáveis de ambiente)
 | Variável | Obrigatória | Observação |
 |---|---|---|
@@ -42,5 +54,10 @@ Campos extras são **rejeitados** (`extra="forbid"`). Isso impede, por exemplo, 
 | `GROQ_API_KEY`, `TAVILY_API_KEY`, `HUBSPOT_TOKEN`, `LANGSMITH_API_KEY` | — | `SecretStr`; obrigatórias apenas nas tasks que as usam |
 | `APP_ENV` | — | `dev`, `test` ou `prod` |
 | `MAX_MESSAGE_CHARS` | — | 100–20.000 (padrão 4.000) |
+| `TOOLS_MCP_URL`, `TOOLS_MCP_TOKEN` | — | Servidor MCP `lead-tools` (T20). Fora da máquina e do compose, só `https` |
+| `API_WRITE_CRM` | — | Grava no HubSpot (padrão `false`) |
+| `API_PROMPT_VERSION` | — | Versão dos prompts usada pela API (padrão `v2`) |
+| `API_MAX_CONCURRENT_RUNS`, `API_MAX_PENDING_RUNS` | — | Fila: 1–4 em paralelo (padrão 1) e 1–100 aceitas e não terminadas (padrão 10) |
+| `API_MAX_BODY_BYTES` | — | 1 KB–1 MB (padrão 32 KB) |
 
 Todos os segredos usam `SecretStr` e não aparecem em `repr`, logs nem tracebacks (há teste para isso).

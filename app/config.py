@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # Limites de entrada (defesa contra abuso de custo e prompt injection volumoso).
     max_message_chars: int = Field(default=4000, ge=100, le=20000)
 
+    # API (T21). Gravar no HubSpot é opt-in: dev e testes nunca escrevem no CRM sem querer.
+    api_write_crm: bool = False
+    api_prompt_version: str = Field(default="v2", pattern=r"^v[0-9]{1,3}$")
+    # Plano gratuito da Groq (8K tokens/min, ~4,5K por lead): uma execução por vez, fila curta.
+    api_max_concurrent_runs: int = Field(default=1, ge=1, le=4)
+    api_max_pending_runs: int = Field(default=10, ge=1, le=100)
+    api_max_body_bytes: int = Field(default=32_768, ge=1024, le=1_048_576)
+
     @field_validator("api_key")
     @classmethod
     def _api_key_strong(cls, value: SecretStr) -> SecretStr:

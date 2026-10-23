@@ -562,3 +562,47 @@
   - LGPD: e-mail mascarado nos erros do CRM gravados na auditoria;
   - ASI08: falha no CRM não perde o resultado da qualificação.
 - **Limitações:** o L002 saiu B e o rótulo humano é A, uma diferença do MVP que já existe no dev e fica para os ajustes do dev. Se o HubSpot aceitar a Note e a gravação no `tool_cache` falhar, um retry cria outra Note; o risco é baixo porque o cache fica no mesmo Postgres que já atendeu a busca.
+
+## T21: API FastAPI
+- **Rotas** (`app/api/main.py`):
+  - `POST /v1/leads/qualify`: valida o `LeadInput` e responde **202** com `run_id`, `status_url` e header `Location`;
+  - `GET /v1/runs/{run_id}`: status, tier, score, critérios, justificativa, custo e ids do CRM (os passos internos ficam só na auditoria);
+  - `GET /v1/runs`: listagem com filtro `status` (a fila de revisão é `status=needs_review`) e paginação;
+  - `GET /health`: Postgres e MCP obrigatórios (503 se falharem) e Ollama informativo (entra no grafo na T28), cada checagem com timeout de 3 s e sem detalhe do erro;
+  - OpenAPI em `/docs`, desligado com `APP_ENV=prod`.
+- **Execução em background** (`app/api/runner.py`, `RunQueue`): a execução é criada como `running` **antes** do 202, então o `GET` já a encontra. O grafo roda numa task com semáforo: 1 por vez por padrão, por causa do plano gratuito da Groq. Uma execução nunca fica `running` para sempre: exceção vira `failed` com `falha interna (Tipo)`, encerramento da API vira `failed` com `execução interrompida`, e um grafo que terminou sem gravar o resultado também vira `failed`.
+- **Montagem de produção** (`app/api/production.py`): `uvicorn --factory app.api.production:build_app`. A integridade de prompts e configuração é conferida na subida (fail closed) e de novo em cada execução. Cada execução abre sua própria conexão MCP, para que uma queda do servidor não contamine a fila.
+- **Auditoria:**
+  - `record_run` passou a completar a execução `running` criada pela API, em vez de inserir outra linha, e recusa sobrescrever execução já encerrada;
+  - `list_runs` foi criada;
+  - **correção da T20:** o `audit_log` não gravava os ids do CRM em `agent_runs.crm_ids` (só nos passos). Agora grava.
+- **Configuração:** `API_WRITE_CRM` (padrão `false`: dev e testes nunca gravam no HubSpot sem querer; o compose da T22 liga), `API_PROMPT_VERSION` (`v2`), `API_MAX_CONCURRENT_RUNS`, `API_MAX_PENDING_RUNS` e `API_MAX_BODY_BYTES`.
+- **Dependência:** `fastapi==0.143.0`. As versões mais novas tinham entre 0 e 5 dias no PyPI (cinco lançamentos em três dias); fixei a mais recente com 14 dias ou mais (ASI04). O pip-audit não encontrou vulnerabilidades.
+- **Teste:**
+  - `tests/api/test_api.py` (36): grafo do MVP mockado e auditoria em memória com o mesmo contrato do `AuditRepository`, cobrindo:
+    - 202 com `Location` e polling até o resultado;
+    - `running` visível antes de terminar e ids do CRM na execução;
+    - 401 sem chave ou com chave errada nas 3 rotas, sem criar execução;
+    - 422 para campo faltando, campo extra (`tier`), domínio interno e metadata de cloud (SSRF), e-mail inválido, mensagem longa e `source` desconhecida, sem ecoar o valor;
+    - 413 por `Content-Length` e por envio chunked, e `Content-Length` inválido;
+    - 404 para run inexistente e 422 para id que não é UUID;
+    - listagem com filtro, paginação e parâmetros inválidos;
+    - 429 com `Retry-After`;
+    - exceção, grafo sem gravar e encerramento da API viram `failed`;
+    - falha ao marcar `failed` não trava a fila;
+    - health ok, degradado sem detalhe e Ollama com timeout sem derrubar;
+    - `/docs` em dev e desligado em produção;
+    - cabeçalhos `nosniff` e `no-store`;
+  - `tests/api/test_production.py` (8): executor com a configuração da API, CRM desligado por padrão, health do Ollama e do MCP, API que não sobe sem chaves ou com configuração adulterada, e `build_app`;
+  - integração com Postgres (`test_audit_repo.py`, 13 testes): `record_run` completando a execução criada pela API, com `crm_ids` e sem sobrescrever execução encerrada, e `list_runs` com ordem, filtro e paginação;
+  - **mutação:** aceitar chave errada, ecoar o valor no 422, tirar o limite do corpo (com e sem `Content-Length`), tirar o limite da fila, não marcar `failed` na exceção, no cancelamento ou no grafo sem gravar, ligar `/docs` em produção e forçar o health a `ok` derrubam pelo menos 1 teste em cada caso;
+  - **execução real** (uvicorn local, Postgres, `tools-mcp` e Groq): `/health` ok nos 3 serviços, `/docs` 200, 401 sem chave, L024 (dev) aceito com 202 e `completed` em 3,2 s (Tier A, 100, US$ 0,00043), listagem e 422 sem eco conferidos. Nada foi gravado no HubSpot (`API_WRITE_CRM=false`);
+  - `make check`: 559 testes (cobertura de 94%), ruff, mypy strict, bandit, detect-secrets e pip-audit.
+- **Segurança:**
+  - ASI03: `X-API-Key` em todo `/v1`, com comparação em tempo constante;
+  - ASI08: fila limitada, corpo limitado e nenhuma execução órfã;
+  - dados pessoais: o 422 não ecoa valores, a resposta não inclui a entrada do lead e o e-mail continua mascarado na auditoria;
+  - superfície: `/docs` desligado em produção, sem CORS (a API não é para navegador) e cabeçalhos `nosniff` e `no-store`.
+- **Limitações:**
+  - a fila fica em memória: com mais de uma instância da API, o limite vale por instância, e uma execução cortada por queda brusca do processo (sem encerramento limpo) fica `running` no banco. Uma varredura de execuções órfãs na subida fica para a T22 ou a T33;
+  - `POST /v1/runs/{run_id}/review` fica para a T31 (revisão humana).

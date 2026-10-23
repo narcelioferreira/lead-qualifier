@@ -37,7 +37,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | E. Integrações | T17–T18: propriedades `ai_*` e cliente HubSpot idempotente (sem duplicar registros) | ✅ |
 | | T19: servidor MCP `lead-tools` (6 tools, Bearer token, container sem root) | ✅ |
 | | T20: grafo via MCP e `write_to_crm` (Note idempotente por `run_id`) | ✅ |
-| | T21–T22: API FastAPI e Docker de ponta a ponta | ⏳ |
+| | T21: API FastAPI (202 + polling, `X-API-Key`, fila limitada, OpenAPI em `/docs`) | ✅ |
+| | T22: Docker de ponta a ponta | ⏳ |
 | F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
@@ -117,6 +118,36 @@ Demonstração com o cliente MCP oficial, contra o container no ar (`uv run pyth
 ```
 
 O MCP Inspector v2 não conecta a este servidor, e isso é esperado: ele roda no navegador, e o preflight CORS (`OPTIONS`) não leva o header `Authorization`, então recebe 401. Abrir CORS só para a demo afrouxaria a autenticação.
+
+---
+
+## API
+
+A API (FastAPI) aceita o lead, responde **202** na hora e qualifica em background. O cliente acompanha a execução pelo `run_id`.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `POST` | `/v1/leads/qualify` | Valida o lead (`LeadInput`) e responde 202 com `run_id` e `Location` |
+| `GET` | `/v1/runs/{run_id}` | Status, tier, score, critérios, justificativa, custo e ids do CRM |
+| `GET` | `/v1/runs?status=needs_review` | Listagem (mais recentes primeiro); com o filtro, vira a fila de revisão humana |
+| `GET` | `/health` | Postgres e MCP (obrigatórios) e Ollama (informativo), sem detalhe de erro |
+
+```bash
+uv run uvicorn --factory app.api.production:build_app --host 127.0.0.1 --port 8000
+curl -s -X POST http://127.0.0.1:8000/v1/leads/qualify -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"company_name": "Gobor Transportes", "company_domain": "gobor.com.br",
+       "contact_role": "Diretor de Operações", "message": "Proposta para 85 caminhões."}'
+# → 202 {"run_id": "...", "status": "running", "status_url": "/v1/runs/..."}
+```
+
+A documentação OpenAPI fica em `http://127.0.0.1:8000/docs`, desligada quando `APP_ENV=prod`. Controles da API:
+- `X-API-Key` em todo `/v1`, comparada em tempo constante;
+- corpo limitado a 32 KB (413), inclusive em envio chunked;
+- o 422 informa só o campo e o tipo do erro, sem ecoar o valor enviado, que pode ser injeção ou dado pessoal;
+- fila limitada: 1 execução por vez, por causa do plano gratuito da Groq, e 429 com `Retry-After` quando enche;
+- uma execução nunca fica `running` para sempre: falha, queda ou encerramento da API vira `failed`;
+- gravar no HubSpot é opt-in (`API_WRITE_CRM=true`).
 
 ---
 
@@ -230,6 +261,7 @@ uv run pytest -m integration            # testes contra serviços reais (Groq, T
 uv run python scripts/qualify.py L024   # qualifica um lead do split dev e mostra o resultado auditado
 uv run python -m evals.run --split dev --config mvp   # avaliação (retomável com --resume)
 docker compose up -d --build tools-mcp  # servidor MCP lead-tools em http://127.0.0.1:8001/mcp (Bearer TOOLS_MCP_TOKEN)
+uv run uvicorn --factory app.api.production:build_app --port 8000   # API em http://127.0.0.1:8000/docs
 ```
 
 Se a porta 5432 já estiver em uso, defina `POSTGRES_PORT` no `.env` e ajuste o `DATABASE_URL`.
@@ -261,7 +293,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 
 ## Qualidade
 
-- **515 testes** unitários e de grafo, sem rede, e **22 testes de integração** contra serviços reais. Cobertura de ~95%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
+- **559 testes** unitários, de grafo e de API, sem rede, e **24 testes de integração** contra serviços reais. Cobertura de ~95%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
 - Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):

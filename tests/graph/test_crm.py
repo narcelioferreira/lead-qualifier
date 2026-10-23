@@ -82,6 +82,7 @@ async def test_grafo_pelo_mcp_grava_no_crm_de_ponta_a_ponta() -> None:
     assert "Critérios:" in note and "Setor:" in note and run_id in note
     step = next(s for s in audit.records[0]["steps"] if s.node == "write_to_crm")
     assert step.output["note_id"] == "444" and step.output["note_created"] is True
+    assert audit.records[0]["crm_ids"] == state["crm"]  # vai para `agent_runs.crm_ids` (T21)
 
 
 async def test_mesmo_run_id_duas_vezes_nao_duplica_a_note() -> None:

@@ -353,6 +353,7 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
                     errors=state.get("errors", []),
                     latency_ms=latency_ms(state),
                     rejected_fields=list(state.get("raw_input", {})) if "lead" not in state else (),
+                    crm_ids=state.get("crm"),
                 )
             except Exception as exc:
                 update["errors"] = [f"audit_log: falha ao gravar ({type(exc).__name__})"]

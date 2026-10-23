@@ -72,6 +72,21 @@ class StepView(StepRecord):
     created_at: datetime
 
 
+class RunSummary(BaseModel):
+    """Linha da listagem de execuções (sem entrada, passos nem justificativa)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: uuid.UUID
+    status: str
+    created_at: datetime
+    finished_at: datetime | None
+    prompt_version: str
+    tier: str | None
+    score: Decimal | None
+    cost_usd: Decimal
+
+
 class RunView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -169,11 +184,15 @@ class AuditRepository:
         errors: Sequence[str] = (),
         latency_ms: int,
         rejected_fields: Sequence[str] = (),
+        crm_ids: dict[str, Any] | None = None,
     ) -> None:
         """Grava uma execução completa numa transação (usado pelo nó `audit_log`).
 
         Lead rejeitado não tem `LeadInput` válido: grava-se só o nome dos campos enviados,
         nunca os valores (que podem ser lixo, injeção ou dado pessoal).
+
+        Se a execução já existe como `running` (criada pela API ao aceitar o lead), ela é
+        completada; execução já encerrada não é sobrescrita.
         """
         if result is not None and result.run_id != str(run_id):
             raise AuditError("run_id do resultado não confere com a execução")
@@ -183,10 +202,18 @@ class AuditRepository:
             else {"rejected": True, "fields": sorted(rejected_fields)[:MAX_ERRORS]}
         )
         async with self._sessions.begin() as session:
-            run = AgentRun(
-                run_id=run_id, prompt_version=prompt_version, lead_input=lead_input, status=status
+            run = await session.scalar(
+                select(AgentRun).where(AgentRun.run_id == run_id).with_for_update()
             )
-            session.add(run)
+            if run is None:
+                run = AgentRun(run_id=run_id)
+                session.add(run)
+            elif run.status != "running":
+                raise AuditError(f"execução {run_id} já foi encerrada ({run.status})")
+            run.prompt_version = prompt_version
+            run.lead_input = lead_input
+            run.status = status
+            run.crm_ids = crm_ids or None
             for step in steps:
                 session.add(_step_row(run_id, step))
             await session.flush()
@@ -194,6 +221,29 @@ class AuditRepository:
                 _apply_result(run, result)
             run.errors = _clean_errors(errors)
             await self._close(session, run, latency_ms)
+
+    async def list_runs(
+        self, *, status: str | None = None, limit: int = 20, offset: int = 0
+    ) -> list[RunSummary]:
+        """Execuções mais recentes primeiro, com filtro opcional de status."""
+        query = select(AgentRun).order_by(AgentRun.created_at.desc(), AgentRun.run_id)
+        if status is not None:
+            query = query.where(AgentRun.status == status)
+        async with self._sessions() as session:
+            runs = (await session.scalars(query.limit(limit).offset(offset))).all()
+        return [
+            RunSummary(
+                run_id=run.run_id,
+                status=run.status,
+                created_at=run.created_at,
+                finished_at=run.finished_at,
+                prompt_version=run.prompt_version,
+                tier=run.tier,
+                score=run.score,
+                cost_usd=run.cost_usd,
+            )
+            for run in runs
+        ]
 
     async def get_run(self, run_id: uuid.UUID) -> RunView | None:
         async with self._sessions() as session:

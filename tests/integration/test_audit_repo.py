@@ -240,3 +240,43 @@ async def test_record_run_rejected_keeps_only_field_names(repo: AuditRepository)
     assert run is not None and run.status == "rejected"
     assert run.lead_input == {"rejected": True, "fields": ["company_name", "message", "tier"]}
     assert run.tier is None and run.result is None
+
+
+async def test_record_run_completa_a_execucao_criada_pela_api(repo: AuditRepository) -> None:
+    """A API cria a execução como `running` (T21); o `audit_log` completa a mesma linha."""
+    run_id = await repo.start_run(LEAD, "v2", uuid.uuid4())
+    await repo.record_run(
+        run_id=run_id,
+        prompt_version="v2",
+        lead=LEAD,
+        status="completed",
+        steps=[StepRecord(node="validate_input"), _step("assess", "0.0001")],
+        result=_result(run_id),
+        latency_ms=900,
+        crm_ids={"company_id": "111", "note_id": "444"},
+    )
+    run = await repo.get_run(run_id)
+    assert run is not None
+    assert (run.status, run.tier, run.cost_usd) == ("completed", "A", Decimal("0.0001"))
+    assert run.crm_ids == {"company_id": "111", "note_id": "444"}
+    assert [s.node for s in run.steps] == ["validate_input", "assess"]
+    assert run.finished_at is not None
+
+    with pytest.raises(AuditError, match="já foi encerrada"):  # não sobrescreve
+        await repo.record_run(
+            run_id=run_id, prompt_version="v2", lead=LEAD, status="failed", steps=[],
+            latency_ms=1,
+        )  # fmt: skip
+
+
+async def test_list_runs_filtra_ordena_e_pagina(repo: AuditRepository) -> None:
+    first = await repo.start_run(LEAD, "v2", uuid.uuid4())
+    second = await repo.start_run(LEAD, "v2", uuid.uuid4())
+    await repo.fail_run(first, ["falha interna (RuntimeError)"], 10)
+
+    ids = [r.run_id for r in await repo.list_runs(limit=100)]
+    assert ids.index(second) < ids.index(first)  # mais recente primeiro
+    failed = await repo.list_runs(status="failed", limit=100)
+    assert first in {r.run_id for r in failed} and all(r.status == "failed" for r in failed)
+    page = await repo.list_runs(limit=1, offset=1)
+    assert len(page) == 1

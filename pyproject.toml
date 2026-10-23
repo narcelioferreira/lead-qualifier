@@ -17,6 +17,7 @@ dependencies = [
     "langgraph>=1.0",
     "mcp>=2.3,<3",  # API 2.x: MCPServer (antigo FastMCP)
     "uvicorn>=0.32",
+    "fastapi==0.143.0",  # versão com 14+ dias no PyPI (cadeia de suprimentos, ASI04)
 ]
 
 [dependency-groups]
