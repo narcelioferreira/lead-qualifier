@@ -72,6 +72,27 @@ O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd
 
 ---
 
+## Servidor MCP `lead-tools`
+
+As ferramentas do agente ficam atrás de um servidor **MCP** (SDK oficial `mcp` 2.x, transporte Streamable HTTP), num container separado. As chaves da Tavily e do HubSpot só existem nele; o grafo passa a consumi-lo na T20.
+
+| Tool | Tipo | O que faz |
+|---|---|---|
+| `search_company_web` | leitura | Busca dados públicos da empresa (Tavily, com cache) |
+| `fetch_company_site` | leitura | Lê a home e a página "sobre" (SSRF bloqueado em cada redirect) |
+| `hubspot_upsert_company` | escrita idempotente | Cria ou atualiza a empresa pelo domínio, sem duplicar |
+| `hubspot_upsert_contact` | escrita idempotente | Cria ou atualiza o contato pelo e-mail |
+| `hubspot_associate` | escrita idempotente | Associa o contato à empresa |
+| `hubspot_create_note` | escrita | Cria a Note com a justificativa (HTML escapado) |
+
+Nenhuma tool apaga dados. O servidor exige **token Bearer** (sem ele, nem sobe), bloqueia `Host` fora da allowlist (DNS rebinding) e roda sem root, com disco só leitura, sem capabilities e sem binários setuid.
+
+![MCP Inspector chamando search_company_web no servidor lead-tools](docs/img/t19-mcp-inspector.png)
+
+*MCP Inspector v2 conectado ao container `tools-mcp` (`http://127.0.0.1:8001/mcp`, Bearer) chamando `search_company_web`.*
+
+---
+
 ## Avaliação
 
 - **Dataset:** 50 leads de empresas **reais e públicas** (domínios conferidos), com cargo, mensagem e e-mail inventados.
@@ -129,8 +150,8 @@ O modelo de ameaças completo, o mapeamento AST, os testes por controle e os ris
 | Risco (OWASP) | Controles implementados | Planejado |
 |---|---|---|
 | **ASI01 · Goal Hijack** (prompt injection) · AST05 | Conteúdo não confiável em blocos `<dados_{nonce}>` com nonce aleatório por chamada. **Detector determinístico** na mensagem, no cargo e no site da empresa: com um padrão conhecido, o texto **nem chega ao LLM** e o lead é desqualificado (K1). Saída só com enums, e **o score é calculado em código** | Guardrail com SLM local (T28) |
-| **ASI02 · Tool Misuse** · AST03, AST06 | Ferramentas só de leitura. **SSRF** bloqueado em cada requisição e redirect (só IP público, portas 80/443, sem credenciais, até 5 MB) | HubSpot com escopos mínimos e validação antes de cada ação (Fase E) |
-| **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres e Ollama só em `127.0.0.1` | `X-API-Key` na API (T21) e segredos isolados no container de tools (T19) |
+| **ASI02 · Tool Misuse** · AST03, AST06 | **SSRF** bloqueado em cada requisição e redirect (só IP público, portas 80/443, sem credenciais, até 5 MB). Tools do HubSpot com allowlist de propriedades, IDs validados, sem delete e anotações honestas (leitura × escrita) | Validação antes de cada escrita no grafo (T20) |
+| **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres, Ollama e MCP só em `127.0.0.1`. **Chaves da Tavily e do HubSpot isoladas no container de tools**, que exige Bearer token; chave de serviço do HubSpot com escopos mínimos | `X-API-Key` na API (T21) |
 | **ASI04 · Supply Chain** · AST02, AST07 | `uv.lock` com hashes, pip-audit, bandit e detect-secrets. **Actions fixadas por SHA**, **imagens por digest** e Dependabot. **Prompts e configuração com SHA-256** (`integrity.lock.json`): versão publicada é imutável e o agente **recusa iniciar** se algo divergir | — |
 | **ASI05 · Code Execution** · AST04 | Nenhuma ferramenta executa código; a saída do LLM é só JSON validado; YAML com `safe_load` | — |
 | **ASI06 · Context Poisoning** | Cache só de sucessos, com texto sanitizado; o detector de injeção roda **a cada execução**, inclusive sobre conteúdo vindo do cache | Isolamento dos chunks do RAG (Fase F) |
@@ -158,7 +179,7 @@ Os detalhes estão no documento 06.
 
 Python 3.12 · uv · LangGraph · **Groq** (`openai/gpt-oss-20b` e `gpt-oss-120b`, structured output estrito, plano gratuito) · **Ollama** (SLM local `qwen3:4b` e embeddings) · Tavily · trafilatura · Postgres 16 + pgvector · SQLAlchemy (async) + Alembic · httpx + tenacity · Pydantic · pytest + respx · ruff · mypy · bandit · Docker Compose · GitHub Actions.
 
-Integrações previstas: MCP (FastMCP), FastAPI e HubSpot.
+Integrações: **MCP** (SDK `mcp` 2.x, servidor `lead-tools`) e **HubSpot** (chave de serviço). Prevista: FastAPI.
 
 > O projeto começou com a OpenAI e migrou para a Groq na T10, para usar um plano gratuito. Os modelos `gpt-oss` têm pesos abertos, então o ID aponta para uma versão fixa, e os preços de lista ficam no catálogo para reportar o custo equivalente por lead.
 
