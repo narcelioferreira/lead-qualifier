@@ -280,3 +280,18 @@ async def test_list_runs_filtra_ordena_e_pagina(repo: AuditRepository) -> None:
     assert first in {r.run_id for r in failed} and all(r.status == "failed" for r in failed)
     page = await repo.list_runs(limit=1, offset=1)
     assert len(page) == 1
+
+
+async def test_fail_orphan_runs_fecha_so_as_execucoes_running(repo: AuditRepository) -> None:
+    orphan = await repo.start_run(LEAD, "v2", uuid.uuid4())
+    done = await repo.start_run(LEAD, "v2", uuid.uuid4())
+    await repo.complete_run(done, _result(done), latency_ms=10)
+
+    assert await repo.fail_orphan_runs("execução interrompida (API reiniciada)") >= 1
+    closed = await repo.get_run(orphan)
+    kept = await repo.get_run(done)
+    assert closed is not None and closed.status == "failed"
+    assert closed.errors == ["execução interrompida (API reiniciada)"]
+    assert closed.finished_at is not None
+    assert kept is not None and kept.status == "completed"
+    assert await repo.fail_orphan_runs("x") == 0

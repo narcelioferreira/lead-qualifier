@@ -38,7 +38,7 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | | T19: servidor MCP `lead-tools` (6 tools, Bearer token, container sem root) | ✅ |
 | | T20: grafo via MCP e `write_to_crm` (Note idempotente por `run_id`) | ✅ |
 | | T21: API FastAPI (202 + polling, `X-API-Key`, fila limitada, OpenAPI em `/docs`) | ✅ |
-| | T22: Docker de ponta a ponta | ⏳ |
+| | T22: sistema completo em Docker, smoke de ponta a ponta e demo offline no Actions | ✅ |
 | F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
@@ -118,6 +118,17 @@ Demonstração com o cliente MCP oficial, contra o container no ar (`uv run pyth
 ```
 
 O MCP Inspector v2 não conecta a este servidor, e isso é esperado: ele roda no navegador, e o preflight CORS (`OPTIONS`) não leva o header `Authorization`, então recebe 401. Abrir CORS só para a demo afrouxaria a autenticação.
+
+---
+
+## Demo sem clonar
+
+O workflow **[Demo offline](../../actions/workflows/demo.yml)** roda a API e o grafo de verdade no GitHub Actions, sem secrets e sem rede, e publica o resultado no *Job Summary*: o tier de cada lead ao lado do rótulo humano, os critérios, a justificativa, o 401 sem chave e o 422 quando o cliente tenta mandar o próprio tier. As respostas da Groq, da Tavily e dos sites de 5 leads do split dev foram gravadas uma vez (`evals/demo/cassette.json`, com e-mails removidos) e são reproduzidas na demo. A rubrica, as regras, o detector de injeção e o saneamento rodam a cada execução, e um audit hook do Python bloqueia qualquer conexão fora do loopback.
+
+```bash
+uv run python -m evals.demo            # a mesma demo, local, em ~2 s
+uv run python -m evals.demo --record   # regrava a fita (Groq + MCP reais, só leads do dev)
+```
 
 ---
 
@@ -247,9 +258,20 @@ Integrações: **MCP** (SDK `mcp` 2.x, servidor `lead-tools`) e **HubSpot** (cha
 
 **Pré-requisitos:** Python 3.12, [uv](https://docs.astral.sh/uv/) e Docker. Para as execuções reais: chaves da [Groq](https://console.groq.com/keys) e da [Tavily](https://app.tavily.com), ambas com plano gratuito.
 
+**Sistema completo em Docker** (3 comandos):
+
+```bash
+cp .env.example .env                    # preencha API_KEY, POSTGRES_*, GROQ_API_KEY, TAVILY_API_KEY, HUBSPOT_TOKEN e TOOLS_MCP_TOKEN
+docker compose up -d --build api        # postgres → migrate → tools-mcp → api (+ ollama), tudo só em 127.0.0.1
+scripts/smoke_e2e.sh                    # qualifica um lead pela API e confere o tier e o registro no HubSpot
+```
+
+A API fica em `http://127.0.0.1:8000/docs`. Ela não recebe as chaves da Tavily e do HubSpot (só o container `tools-mcp` tem), e todos os containers rodam sem root, com disco só leitura e sem capabilities. No compose, a gravação no HubSpot vem ligada; `API_WRITE_CRM=false` no `.env` desliga.
+
+**Desenvolvimento local:**
+
 ```bash
 uv sync                                 # dependências
-cp .env.example .env                    # preencha API_KEY (32+ caracteres), POSTGRES_*, GROQ_API_KEY e TAVILY_API_KEY
 docker compose up -d postgres ollama    # Postgres + pgvector e Ollama (portas só em 127.0.0.1)
 docker compose exec ollama ollama pull qwen3:4b
 uv run alembic upgrade head             # migrations

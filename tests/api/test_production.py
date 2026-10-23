@@ -106,3 +106,31 @@ def test_build_app(monkeypatch: pytest.MonkeyPatch) -> None:
     app = production.build_app()
     assert isinstance(app, FastAPI)
     assert {"/v1/leads/qualify", "/health"} <= set(app.openapi()["paths"])
+
+
+async def test_subida_marca_as_execucoes_orfas_como_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import integrity
+
+    calls: list[str] = []
+
+    class FakeRepo:
+        def __init__(self, sessions: Any) -> None:
+            pass
+
+        async def fail_orphan_runs(self, message: str) -> int:
+            calls.append(message)
+            return 2
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            calls.append("dispose")
+
+    monkeypatch.setattr(integrity, "verify", lambda: "digest")
+    monkeypatch.setattr(production, "AuditRepository", FakeRepo)
+    monkeypatch.setattr(production, "create_engine", lambda url: FakeEngine())
+    monkeypatch.setattr(production, "session_factory", lambda engine: None)
+    async with production.production_services(_settings()) as services:
+        assert set(services.checks) == {"postgres", "mcp", "ollama"}
+    assert calls == [production.ORPHAN_MESSAGE, "dispose"]

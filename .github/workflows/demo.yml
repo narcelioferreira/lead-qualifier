@@ -1,0 +1,31 @@
+name: Demo offline
+
+# Disparo manual (Actions → Demo offline → Run workflow). A API e o grafo rodam de verdade, sem
+# rede e sem secrets: as respostas da Groq, da Tavily e dos sites vêm da fita gravada
+# (`evals/demo/cassette.json`). O resultado aparece no Job Summary da execução.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions fixadas por SHA de commit (imutável), não por tag móvel (OWASP ASI04 / AST02).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - name: Instalar dependências (só produção)
+        run: uv sync --locked --no-dev
+      - name: Demo offline (API + grafo, com guarda de rede)
+        run: uv run --no-sync python -m evals.demo --summary "$GITHUB_STEP_SUMMARY"

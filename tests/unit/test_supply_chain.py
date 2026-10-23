@@ -79,3 +79,51 @@ def test_services_listen_only_on_localhost() -> None:
     for name, service in compose["services"].items():
         for port in service.get("ports", []):
             assert str(port).startswith("127.0.0.1:"), name
+
+
+def _compose() -> dict[str, Any]:
+    data: dict[str, Any] = yaml.safe_load((ROOT / "docker-compose.yml").read_text("utf-8"))
+    return data
+
+
+def test_cada_servico_recebe_so_os_segredos_que_usa() -> None:
+    """ASI03: a API não vê as chaves da Tavily e do HubSpot; as tools não veem a da Groq."""
+    services = _compose()["services"]
+    for name, service in services.items():
+        assert "env_file" not in service, name  # variáveis uma a uma, nunca o .env inteiro
+    api = set(services["api"]["environment"])
+    assert {"API_KEY", "GROQ_API_KEY", "TOOLS_MCP_TOKEN"} <= api
+    assert not {"TAVILY_API_KEY", "HUBSPOT_TOKEN"} & api
+    tools = set(services["tools-mcp"]["environment"])
+    assert {"TAVILY_API_KEY", "HUBSPOT_TOKEN", "TOOLS_MCP_TOKEN"} <= tools
+    assert not {"API_KEY", "GROQ_API_KEY"} & tools
+    migrate = set(services["migrate"]["environment"])
+    assert migrate == {"API_KEY", "DATABASE_URL"}
+
+
+def test_api_sobe_so_depois_das_migrations_e_do_mcp() -> None:
+    services = _compose()["services"]
+    depends = services["api"]["depends_on"]
+    assert depends["migrate"]["condition"] == "service_completed_successfully"
+    assert depends["tools-mcp"]["condition"] == "service_healthy"
+    assert services["migrate"]["depends_on"]["postgres"]["condition"] == "service_healthy"
+    assert services["api"]["environment"]["TOOLS_MCP_URL"].startswith("http://tools-mcp:")
+
+
+def test_servicos_longos_tem_healthcheck() -> None:
+    services = _compose()["services"]
+    for name, service in services.items():
+        if service.get("restart") == "no":
+            continue  # tarefa única (migrate)
+        dockerfile = service.get("build", {}).get("dockerfile")
+        built_check = dockerfile and "HEALTHCHECK" in (ROOT / dockerfile).read_text("utf-8")
+        assert "healthcheck" in service or built_check, name
+
+
+def test_workflow_da_demo_e_manual_sem_secrets_e_so_leitura() -> None:
+    text = (ROOT / ".github" / "workflows" / "demo.yml").read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    assert set(data[True]) == {"workflow_dispatch"}  # o YAML lê `on:` como True
+    assert data["permissions"] == {"contents": "read"}
+    assert "secrets." not in text  # a demo roda da fita gravada, sem chave nenhuma
+    assert "uv sync --locked" in text

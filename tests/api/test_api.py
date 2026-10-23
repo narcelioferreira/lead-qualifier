@@ -1,13 +1,11 @@
 """API FastAPI (T21) com o grafo do MVP mockado (LLM, busca e site falsos).
 
-A auditoria fica num `MemoryStore` com o mesmo contrato do `AuditRepository`.
+A auditoria fica no `MemoryAuditRepository`, com o mesmo contrato do `AuditRepository`.
 """
 
 import asyncio
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -17,12 +15,12 @@ from pydantic import SecretStr
 from app.api import main as api_main
 from app.api.main import HealthCheck, Services, create_app
 from app.api.runner import Executor, RunQueue
-from app.audit.repository import AuditError, RunSummary, RunView, StepView, audit_lead_input
+from app.audit.memory import MemoryAuditRepository
 from app.config import Settings
 from app.graph.builder import build_graph
 from app.graph.nodes.extraction import Assessment, Extraction
 from app.graph.nodes.mvp import MvpDeps, make_nodes
-from app.schemas import LeadInput, QualificationResult
+from app.schemas import LeadInput
 from tests.graph.test_mvp import ASSESSMENT, LEAD, SEARCH_OK, SITE_OK, FakeLLM, extraction
 
 pytestmark = pytest.mark.anyio
@@ -37,84 +35,8 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-class MemoryStore:
-    """Mesmo contrato do `AuditRepository` usado pela API e pelo nó `audit_log`."""
-
-    def __init__(self) -> None:
-        self.runs: dict[uuid.UUID, dict[str, Any]] = {}
-
-    async def start_run(
-        self, lead: LeadInput, prompt_version: str, run_id: uuid.UUID | None = None
-    ) -> uuid.UUID:
-        run_id = run_id or uuid.uuid4()
-        self.runs[run_id] = {
-            "run_id": run_id,
-            "status": "running",
-            "created_at": datetime.now(UTC),
-            "finished_at": None,
-            "prompt_version": prompt_version,
-            "lead_input": audit_lead_input(lead),
-            "tier": None,
-            "score": None,
-            "confidence": None,
-            "next_step": None,
-            "result": None,
-            "cost_usd": Decimal(0),
-            "latency_ms": None,
-            "crm_ids": None,
-            "errors": [],
-            "steps": [],
-        }
-        return run_id
-
-    def _running(self, run_id: uuid.UUID) -> dict[str, Any]:
-        run = self.runs[run_id]
-        if run["status"] != "running":
-            raise AuditError(f"execução {run_id} já foi encerrada ({run['status']})")
-        return run
-
-    async def fail_run(self, run_id: uuid.UUID, errors: Sequence[str], latency_ms: int) -> None:
-        run = self._running(run_id)
-        run |= {"status": "failed", "errors": list(errors), "latency_ms": latency_ms}
-        run["finished_at"] = datetime.now(UTC)
-
-    async def record_run(
-        self,
-        *,
-        run_id: uuid.UUID,
-        status: str,
-        result: QualificationResult | None = None,
-        errors: Sequence[str] = (),
-        latency_ms: int,
-        crm_ids: dict[str, Any] | None = None,
-        **_: Any,
-    ) -> None:
-        run = self._running(run_id)
-        run |= {"status": status, "errors": list(errors), "latency_ms": latency_ms}
-        run |= {"crm_ids": crm_ids or None, "finished_at": datetime.now(UTC)}
-        if result is not None:
-            run |= {
-                "tier": result.tier.value,
-                "score": Decimal(str(result.score)),
-                "confidence": Decimal(str(result.confidence)),
-                "result": result.model_dump(mode="json"),
-                "cost_usd": Decimal(str(result.cost_usd)),
-            }
-
-    async def get_run(self, run_id: uuid.UUID) -> RunView | None:
-        run = self.runs.get(run_id)
-        if run is None:
-            return None
-        steps: list[StepView] = run["steps"]
-        return RunView.model_validate(run | {"steps": steps})
-
-    async def list_runs(
-        self, *, status: str | None = None, limit: int = 20, offset: int = 0
-    ) -> list[RunSummary]:
-        runs = sorted(self.runs.values(), key=lambda r: r["created_at"], reverse=True)
-        runs = [r for r in runs if status is None or r["status"] == status]
-        fields = RunSummary.model_fields
-        return [RunSummary.model_validate({k: r[k] for k in fields}) for r in runs[offset:][:limit]]
+# Mesmo contrato do `AuditRepository`, sem banco (também usado pela demo offline).
+MemoryStore = MemoryAuditRepository
 
 
 def graph_executor(store: MemoryStore, *, crm: dict[str, str] | None = None) -> Executor:
@@ -122,7 +44,13 @@ def graph_executor(store: MemoryStore, *, crm: dict[str, str] | None = None) -> 
 
     async def execute(run_id: uuid.UUID, lead: LeadInput) -> None:
         llm = FakeLLM({Extraction: [extraction()], Assessment: [ASSESSMENT]})
-        deps = MvpDeps(llm=llm, search=SEARCH_OK, site=SITE_OK, audit=store)  # type: ignore[arg-type]
+        deps = MvpDeps(
+            llm=llm,
+            search=SEARCH_OK,
+            site=SITE_OK,
+            audit=store,
+            prompt_version="v2",  # type: ignore[arg-type]
+        )
         graph = build_graph(make_nodes(deps))
         await graph.ainvoke({"run_id": str(run_id), "raw_input": lead.model_dump(mode="json")})
         if crm is not None:  # simula o `write_to_crm` ligado

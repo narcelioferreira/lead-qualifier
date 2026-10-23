@@ -1,0 +1,37 @@
+# API FastAPI do agente (T22). Imagens fixadas por digest (ASI04 / AST02).
+# Build: docker compose build api   ·   a mesma imagem roda as migrations (serviço `migrate`).
+
+FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
+
+FROM python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70 AS build
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+WORKDIR /app
+# Só as dependências de produção, exatamente as do lockfile (com hash).
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-dev --no-install-project
+# `tools_mcp` entra pelos modelos compartilhados (SearchResult, CompanyProps...); as chaves da
+# Tavily e do HubSpot nunca chegam a este container (ASI03).
+COPY app ./app
+COPY tools_mcp ./tools_mcp
+COPY migrations ./migrations
+COPY alembic.ini ./
+RUN uv sync --locked --no-dev
+
+FROM python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70
+# Sem binários setuid/setgid: substitui o `no-new-privileges`, que o Docker do snap não
+# suporta. Com `cap_drop: ALL` e usuário sem privilégio, não sobra caminho de escalada.
+RUN useradd --system --uid 10001 --no-create-home api \
+    && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+WORKDIR /app
+COPY --from=build --chown=root:root /app /app
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=prod
+USER api
+EXPOSE 8000
+# Liveness simples (porta aberta): o /health completo depende do MCP e do Postgres.
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
+    CMD ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2)"]
+CMD ["uvicorn", "--factory", "app.api.production:build_app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]

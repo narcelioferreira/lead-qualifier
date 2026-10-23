@@ -5,6 +5,7 @@ A integridade de prompts e configuração é conferida na subida (fail closed) e
 execução do grafo (`production_graph`).
 """
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,6 +24,9 @@ from app.config import Settings, get_settings
 from app.graph.runtime import production_graph
 from app.mcp_client import connect
 from app.schemas import LeadInput
+
+logger = logging.getLogger(__name__)
+ORPHAN_MESSAGE = "execução interrompida (API reiniciada)"
 
 
 def graph_executor(settings: Settings) -> Executor:
@@ -64,6 +68,9 @@ async def production_services(settings: Settings) -> AsyncIterator[Services]:
     engine = create_engine(settings.database_url)
     try:
         store = AuditRepository(session_factory(engine))
+        orphans = await store.fail_orphan_runs(ORPHAN_MESSAGE)
+        if orphans:
+            logger.warning("%d execução(ões) órfã(s) marcada(s) como failed", orphans)
         queue = RunQueue(
             store,
             graph_executor(settings),

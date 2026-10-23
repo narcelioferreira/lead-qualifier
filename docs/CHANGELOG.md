@@ -606,3 +606,34 @@
 - **Limitações:**
   - a fila fica em memória: com mais de uma instância da API, o limite vale por instância, e uma execução cortada por queda brusca do processo (sem encerramento limpo) fica `running` no banco. Uma varredura de execuções órfãs na subida fica para a T22 ou a T33;
   - `POST /v1/runs/{run_id}/review` fica para a T31 (revisão humana).
+
+## T22: Docker de ponta a ponta e demo offline
+- **`Dockerfile.api`:** multi-stage, bases fixadas por digest (as mesmas do `tools-mcp`), `uv sync --locked --no-dev`, usuário não-root (uid 10001), imagem sem setuid/setgid, healthcheck e `--no-server-header`. A mesma imagem roda as migrations.
+- **Compose completo** (`postgres → migrate → tools-mcp → api`, mais o `ollama`):
+  - `migrate` roda `alembic upgrade head` uma vez, e a API só sobe com `service_completed_successfully` nele e `service_healthy` no `tools-mcp`;
+  - healthcheck em todos os serviços longos (Ollama com `ollama list`);
+  - todos os containers construídos aqui rodam com `read_only` e `cap_drop: ALL`, e as portas escutam só em `127.0.0.1`;
+  - **segredos por serviço**, variável por variável e sem `env_file`: a API recebe a própria chave, a da Groq e o token do MCP, mas não as chaves da Tavily e do HubSpot; o `tools-mcp` não recebe a chave da API nem a da Groq;
+  - no compose, `API_WRITE_CRM` vem ligado (o sistema completo grava no HubSpot) e `APP_ENV=dev` mantém o `/docs` para a demonstração local.
+- **Varredura de execuções órfãs** (pendência da T21): na subida, a API marca como `failed` ("execução interrompida (API reiniciada)") as execuções que ficaram `running` depois de uma queda brusca. Supõe uma instância da API.
+- **`scripts/smoke_e2e.sh`:** sobe o sistema, espera o `/health`, confere o 401 sem chave, qualifica o L024 (dev) pela API, faz polling e confere o tier e o registro no HubSpot (`ai_run_id` e `ai_fit_tier` da empresa, e o id da Note). O `.env` é lido sem `source`, e as chaves vão para o `curl` por descritor de arquivo, então não aparecem na lista de processos nem na saída. O script passa no shellcheck.
+- **Demo offline** (`evals/demo.py` e o workflow `Demo offline`, com disparo manual):
+  - `--record` (feito uma vez) roda o grafo real com a Groq e o MCP em 5 leads do dev (L024, L002, L030, L005 e L020: um por tier no gabarito, mais injeção e spam) e grava as respostas em `evals/demo/cassette.json`, sem CRM e com e-mails trocados por `[e-mail removido]` (LGPD);
+  - a reprodução sobe a API FastAPI em processo, com o grafo real e a auditoria em memória (`app/audit/memory.py`, o mesmo contrato do `AuditRepository`, agora usado também nos testes da API), e gera um relatório Markdown: 401 sem chave, 422 com `tier` forjado, o tier de cada lead ao lado do rótulo humano, os critérios e a justificativa (escapada para não virar HTML nem quebrar a tabela);
+  - a **guarda de rede** é um audit hook do Python (PEP 578) que bloqueia `connect` e `getaddrinfo` fora do loopback, então a demo prova que roda offline;
+  - o workflow é só de disparo manual, tem `contents: read`, não usa nenhum secret, instala com `uv sync --locked --no-dev` e escreve no `$GITHUB_STEP_SUMMARY`;
+  - resultado da fita: concordância de 4 de 5 com o rótulo humano. A L002 (Ciamed) saiu C e o rótulo é B, e o relatório mostra isso.
+- **Teste:**
+  - `test_supply_chain.py` (+4): segredos por serviço, a API depende das migrations e do MCP, healthcheck nos serviços longos e o workflow da demo manual, só leitura e sem secrets;
+  - `test_demo.py` (11): a fita só tem leads do dev e nenhum e-mail; a reprodução pela API dá 401, 422, L005 D com K1 sem LLM, L020 D e L024 A; o relatório e o escape de HTML; fita esgotada vira erro tratável; a demo recusa o split test; a gravação registra LLM, busca e site e mascara e-mails; a guarda de rede bloqueia `connect` e DNS fora do loopback e libera o loopback (em subprocesso); a CLI acrescenta ao summary;
+  - `test_production.py`: a subida marca execuções órfãs; integração com Postgres: `fail_orphan_runs` fecha só as `running`;
+  - **mutação:** desligar a guarda de rede (connect ou DNS), a máscara de e-mail, a recusa do split test ou a varredura de órfãs, colocar a chave do HubSpot na API, subir a API antes das migrations ou rodá-la como root derruba pelo menos 1 teste em cada caso;
+  - **demo em ambiente limpo:** um diretório só com os arquivos versionados e `uv sync --locked --no-dev` rodou a demo com os 5 leads, como o Actions fará;
+  - **smoke real** (autor, terminal do Ubuntu): `docker compose build --no-cache api migrate` e `scripts/smoke_e2e.sh`. A execução `c38af31b` foi criada pela API em Docker e terminou `completed`, Tier A (100). Pela API do HubSpot, a empresa ficou com `ai_run_id` dessa execução e `ai_fit_tier=A`, e a Note tem a justificativa completa (995 caracteres; a interface do HubSpot só recolhe o texto longo);
+  - `make check`: 575 testes (cobertura de 93%), ruff, mypy strict, bandit, detect-secrets e pip-audit.
+- **Problemas corrigidos:**
+  - o teste da guarda de rede passava mesmo com a guarda desligada, porque o sandbox desta máquina também bloqueia a rede com `PermissionError`. Agora ele exige a mensagem da própria guarda;
+  - o `create_connection` resolve o nome mesmo para IP numérico, então a guarda passou a liberar `getaddrinfo` para loopback;
+  - o detect-secrets marcou o `config_digest` (SHA-256) da fita. Ele entrou no baseline como falso positivo, sem excluir o arquivo, que tem conteúdo da web e continua sendo verificado.
+- **Segurança:** ASI03 (segredos por container), ASI04 (bases por digest, workflow sem secrets e com Actions por SHA), ASI08 (nenhuma execução órfã) e LGPD (e-mails fora da fita).
+- **Limitações:** a fita fica desatualizada se os prompts mudarem; ela registra o `config_digest` e a versão do prompt, e se regrava com `--record`. A varredura de órfãs supõe uma instância da API.

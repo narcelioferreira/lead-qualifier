@@ -1,6 +1,8 @@
-# Serviços de infraestrutura para desenvolvimento local e testes de integração.
-# Uso: `docker compose up -d postgres` (e `ollama` quando precisar do SLM).
+# Sistema completo (T22): postgres → migrate → tools-mcp → api, mais o ollama.
+# Uso: `docker compose up -d --build --wait` (ou só `postgres` para os testes de integração).
 # As portas só escutam em 127.0.0.1: nada fica exposto na rede local.
+# Segredos vão um a um para quem usa (ASI03): a API não recebe as chaves da Tavily e do
+# HubSpot, e o `tools-mcp` não recebe API_KEY nem GROQ_API_KEY.
 name: lead-qualifier
 
 services:
@@ -29,6 +31,11 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   tools-mcp:
@@ -53,6 +60,56 @@ services:
     # Sem `no-new-privileges`: no Docker do snap ele impede o exec do Python. A imagem não tem
     # binários setuid/setgid (Dockerfile.tools), então o efeito é o mesmo.
     restart: unless-stopped
+
+  migrate:
+    # Aplica as migrations uma vez e sai; a API só sobe depois que terminar com sucesso.
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      # O `app.config` exige API_KEY (validação de força); a migration não a usa.
+      API_KEY: ${API_KEY:?defina API_KEY no .env}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lead}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-lead_qualifier}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    restart: "no"
+
+  api:
+    # API FastAPI (T21/T22). Uso: `docker compose up -d --build --wait api`.
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      # `dev` mantém o /docs (OpenAPI) para a demonstração local; em produção, APP_ENV=prod.
+      APP_ENV: ${APP_ENV:-dev}
+      API_KEY: ${API_KEY:?defina API_KEY no .env}
+      GROQ_API_KEY: ${GROQ_API_KEY:?defina GROQ_API_KEY no .env}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lead}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-lead_qualifier}
+      TOOLS_MCP_URL: http://tools-mcp:8001/mcp
+      TOOLS_MCP_TOKEN: ${TOOLS_MCP_TOKEN:?defina TOOLS_MCP_TOKEN no .env}
+      OLLAMA_BASE_URL: http://ollama:11434
+      # O sistema completo grava no HubSpot; `API_WRITE_CRM=false` no .env desliga.
+      API_WRITE_CRM: ${API_WRITE_CRM:-true}
+      API_PROMPT_VERSION: ${API_PROMPT_VERSION:-v2}
+      API_MAX_CONCURRENT_RUNS: ${API_MAX_CONCURRENT_RUNS:-1}
+      API_MAX_PENDING_RUNS: ${API_MAX_PENDING_RUNS:-10}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      tools-mcp:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    read_only: true
+    cap_drop: [ALL]
+    restart: unless-stopped
+
 
 volumes:
   pgdata:

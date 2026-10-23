@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -171,6 +171,20 @@ class AuditRepository:
             run.status = "failed"
             run.errors = _clean_errors(errors)
             await self._close(session, run, latency_ms)
+
+    async def fail_orphan_runs(self, message: str) -> int:
+        """Marca como `failed` as execuções que ficaram `running` (API derrubada sem aviso).
+
+        Só a API cria execuções `running`, e cada execução vive numa task do processo. Na
+        subida, nenhuma delas tem mais quem a termine. Supõe uma instância da API (T22).
+        """
+        async with self._sessions.begin() as session:
+            result = await session.execute(
+                update(AgentRun)
+                .where(AgentRun.status == "running")
+                .values(status="failed", errors=_clean_errors([message]), finished_at=func.now())
+            )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
     async def record_run(
         self,

@@ -60,7 +60,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T19: `tools_mcp/server.py` (`mcp` 2.x, `MCPServer`, Streamable HTTP, 6 tools, Bearer token obrigatório, DNS rebinding), `tools_mcp/config.py` (chaves só no container de tools), `Dockerfile.tools` e serviço `tools-mcp` no compose. 485 testes.
 - ✅ T20: grafo consumindo o `lead-tools` pelo cliente oficial do `mcp` 2.x (`app/mcp_client.py`; o `langchain-mcp-adapters` exige `mcp<2`) e nó `write_to_crm` (`app/graph/nodes/crm.py`, Note idempotente por `run_id`, servidor recusa argumentos desconhecidos). Real: L002 e L024 no HubSpot, 2ª gravação sem duplicar. 515 testes + 22 de integração.
 - ✅ T21: API FastAPI (`app/api/`: 202 + background com fila limitada, `GET /v1/runs[/{id}]`, `/health`, `X-API-Key`, 413/422 sem eco/429). `record_run` completa a execução criada pela API e grava `crm_ids`. Real: L024 via API em 3,2 s. 559 testes + 24 de integração.
-- ⏭️ **Próximo passo:** T22 (Docker de ponta a ponta). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
+- ✅ T22: `Dockerfile.api` + compose completo (`migrate` → `tools-mcp` → `api`, healthchecks, segredos por serviço), varredura de execuções órfãs na subida, `scripts/smoke_e2e.sh` e demo offline (`evals/demo.py`, fita em `evals/demo/cassette.json`, workflow `Demo offline` com Job Summary, guarda de rede por audit hook).
+- ⏭️ **Próximo passo:** T23 (base de conhecimento). Pendência do autor na T22: rodar `scripts/smoke_e2e.sh` (Docker só no terminal do Ubuntu) e gravar o GIF da demo. Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash
@@ -73,4 +74,6 @@ uv run pytest -m integration           # testes com serviços reais (Groq, Postg
 uv run python -m evals.run --split dev --config mvp   # avaliação (test exige --confirm-test)
 docker compose up -d --build tools-mcp # servidor MCP lead-tools em 127.0.0.1:8001/mcp (exige TOOLS_MCP_TOKEN)
 uv run uvicorn --factory app.api.production:build_app --port 8000   # API (OpenAPI em /docs)
+docker compose up -d --build api && scripts/smoke_e2e.sh   # sistema completo + smoke (grava no HubSpot)
+uv run python -m evals.demo            # demo offline (fita gravada, sem rede)
 ```
