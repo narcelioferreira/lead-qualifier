@@ -1,4 +1,4 @@
-"""Retry de chamadas HTTP a serviços externos (LLMs, Tavily).
+"""Retry de chamadas HTTP a serviços externos (LLMs, Tavily, HubSpot).
 
 Repete em 429, 5xx, timeout e erro de rede, respeitando o `retry-after` do 429. Outros 4xx
 falham na hora. As exceções carregam só status e um trecho curto do erro, nunca o corpo inteiro
@@ -82,11 +82,14 @@ class wait_retry_after(wait_base):  # noqa: N801 - segue a convenção de nomes 
 
 
 def error_detail(response: httpx.Response) -> str:
-    """Extrai só `type`/`code`/início da mensagem de erro (formatos OpenAI e Tavily)."""
+    """Extrai só `type`/`code`/início da mensagem de erro (formatos OpenAI, Tavily e HubSpot)."""
     try:
         body: Any = response.json()
     except ValueError:
         return response.reason_phrase
+    if isinstance(body, dict) and body.get("category"):  # formato do HubSpot
+        message = str(body.get("message") or "")[:ERROR_SNIPPET]
+        return f"{body['category']} {message}".strip()
     error = body.get("error") or body.get("detail") if isinstance(body, dict) else None
     if isinstance(error, dict):
         parts = [str(error.get(k)) for k in ("type", "code") if error.get(k)]

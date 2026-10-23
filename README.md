@@ -34,7 +34,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | C. Infraestrutura de LLM | T10–T11: clientes Groq e Ollama, custo, Postgres + pgvector, auditoria | ✅ |
 | D. Grafo MVP e baseline | T12–T15: ferramentas de pesquisa, grafo, nós reais, runner de avaliação | ✅ |
 | | T16: baseline × MVP no split dev, ajuste de prompt e rodada única no test | ✅ |
-| E. Integrações | T17–T23: HubSpot, servidores MCP, API FastAPI, Docker | ⏳ |
+| E. Integrações | T17: setup idempotente das propriedades `ai_*` no HubSpot | ✅ |
+| | T18–T22: cliente HubSpot, servidores MCP, API FastAPI, Docker | ⏳ |
 | F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 

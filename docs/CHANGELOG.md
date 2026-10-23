@@ -452,3 +452,21 @@
   
   O runner está calibrado. Nas próximas avaliações, usar uma chave de API dedicada às rodadas.
 - **Segurança:** o split test foi usado uma única vez por configuração e só com `--confirm-test`; os arquivos de previsão não têm dados pessoais; nenhum prompt foi alterado depois de olhar o test (`integrity.lock.json` intacto).
+
+## T17: Setup do HubSpot
+- `tools_mcp/hubspot_schema.py`: definições das 7 propriedades `ai_*` da arquitetura (`ai_fit_tier`, `ai_fit_score`, `ai_confidence`, `ai_next_step`, `ai_run_id`, `ai_prompt_version` e `ai_qualified_at`) e sincronização idempotente pela API de propriedades v3:
+  - as propriedades ficam no grupo `ai_qualification` ("Qualificação por IA");
+  - são criadas em **companies** (o fit ao ICP é da empresa) e em **contacts** (o vendedor trabalha a partir do contato);
+  - a sincronização lê o que existe e só cria o que falta ou faz `PATCH` dos campos editáveis que divergiram (rótulo, tipo de campo, grupo, descrição e opções);
+  - as opções de `ai_fit_tier` saem do enum `Tier`, então o CRM não aceita um tier fora da ontologia.
+- `scripts/setup_hubspot.py` (casca fina, com `--dry-run`) e `error_detail` reconhecendo o formato de erro do HubSpot (`category` + `message`).
+- **Credencial:** a conta não oferece mais Private Apps (legados). A autenticação usa uma **chave de serviço** (Configurações → Integrações → Chaves de serviço), enviada como Bearer, com só os escopos `crm.schemas.companies.read/write` e `crm.schemas.contacts.read/write`. Os escopos de objetos entram na T18.
+- **Teste:**
+  - `tests/unit/test_hubspot_schema.py` (17 testes, respx com um HubSpot falso que guarda estado): a 1ª execução cria 16 itens e a 2ª não escreve nada; divergência vira `PATCH` só do que mudou; dry-run sem escrita; tipo diferente e propriedade nativa recusados; propriedades sem prefixo intocadas; 401, 403, 409, 429 seguido de sucesso, 5xx persistente e 400 com a categoria do HubSpot.
+  - **Mutação:** desligar cada controle (prefixo, tipo, nativa, dry-run, campos do PATCH e 401) derruba pelo menos 1 teste. A mutação dos campos do PATCH sobreviveu na primeira versão e ganhou um teste.
+  - **Conta real:** `--dry-run` (16 a criar) → 1ª execução `{'created': 16}` → 2ª execução `{'unchanged': 16}`. `tests/integration/test_hubspot_live.py` verde.
+  - `make check`: 432 testes (cobertura de 95%), ruff, mypy strict, bandit, detect-secrets e pip-audit sem vulnerabilidades.
+- **Segurança (ASI02/ASI03):** só toca grupo e propriedades com prefixo `ai_` (validado por regex no modelo); nunca apaga; recusa trocar o `type` de uma propriedade existente (corromperia os valores gravados) e alterar propriedade nativa; base URL fixa (sem SSRF); token em `SecretStr`, fora de `repr` e das mensagens de erro (401 e 403 viram mensagens próprias, sem eco da resposta); escopos mínimos só de schema.
+- **Problemas corrigidos:**
+  - o primeiro token do `.env` era uma chave no formato UUID (legada ou de desenvolvedor), recusada com 401. Por isso o 401 (token inválido) e o 403 (escopo faltando) agora têm mensagens separadas;
+  - o `.secrets.baseline` foi atualizado só pelo deslocamento de linhas do `.env.example`.
