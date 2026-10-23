@@ -58,7 +58,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T17: `tools_mcp/hubspot_schema.py` + `scripts/setup_hubspot.py` (grupo e 7 propriedades `ai_*` em companies e contacts, idempotente, sem delete). Chave de serviço do HubSpot (Private Apps não existem mais na conta). Conta real: 16 criados → 16 inalterados. 432 testes + integração.
 - ✅ T18: `tools_mcp/hubspot.py` (upsert de empresa por `domain` + chave única `ai_company_domain`, contato por e-mail, associação, Note com HTML escapado) e `tools_mcp/hubspot_http.py`. Conta real: mesmo lead 2× sem duplicar. 462 testes. **Achado:** o HubSpot cria empresas a partir do e-mail do contato (desligar na conta).
 - ✅ T19: `tools_mcp/server.py` (`mcp` 2.x, `MCPServer`, Streamable HTTP, 6 tools, Bearer token obrigatório, DNS rebinding), `tools_mcp/config.py` (chaves só no container de tools), `Dockerfile.tools` e serviço `tools-mcp` no compose. 485 testes.
-- ⏭️ **Próximo passo:** T20 (grafo consumindo MCP via `langchain-mcp-adapters` e nó `write_to_crm`). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
+- ✅ T20: grafo consumindo o `lead-tools` pelo cliente oficial do `mcp` 2.x (`app/mcp_client.py`; o `langchain-mcp-adapters` exige `mcp<2`) e nó `write_to_crm` (`app/graph/nodes/crm.py`, Note idempotente por `run_id`, servidor recusa argumentos desconhecidos). Real: L002 e L024 no HubSpot, 2ª gravação sem duplicar. 515 testes + 22 de integração.
+- ⏭️ **Próximo passo:** T21 (API FastAPI). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash

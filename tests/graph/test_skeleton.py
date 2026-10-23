@@ -22,7 +22,15 @@ from evals.dataset import load_dataset
 
 pytestmark = pytest.mark.anyio
 
-NODES = ["validate_input", "research", "normalize", "assess", "compute_score", "audit_log"]
+NODES = [
+    "validate_input",
+    "research",
+    "normalize",
+    "assess",
+    "compute_score",
+    "write_to_crm",
+    "audit_log",
+]
 E1 = LeadProfile(
     sector=SectorFit.TARGET,
     size=SizeBand.S_50_199,

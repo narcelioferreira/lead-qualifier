@@ -177,7 +177,8 @@ async def test_happy_path() -> None:
     assert result.cost_usd == pytest.approx(0.00021)  # 2 chamadas ao mini
     assert state["status"] == "completed"
     assert [s.node for s in state["steps"]] == [
-        "validate_input", "research", "normalize", "assess", "compute_score", "audit_log"
+        "validate_input", "research", "normalize", "assess", "compute_score",
+        "write_to_crm", "audit_log",
     ]  # fmt: skip
 
     [record] = audit.records

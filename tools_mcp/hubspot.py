@@ -46,6 +46,10 @@ NOTE_TO_COMPANY = 190
 HubSpotId = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,20}$")]
 
 
+# Id da execução do agente (UUID): chave de idempotência das escritas no CRM.
+RunId = Annotated[str, StringConstraints(pattern=r"^[0-9a-f-]{36}$")]
+
+
 class AiFields(BaseModel):
     """Propriedades `ai_*` gravadas pelo agente (criadas pelo setup da T17)."""
 
@@ -55,7 +59,7 @@ class AiFields(BaseModel):
     ai_fit_score: float | None = Field(default=None, ge=0, le=100)
     ai_confidence: float | None = Field(default=None, ge=0, le=1)
     ai_next_step: Annotated[CleanStr, StringConstraints(max_length=1000)] | None = None
-    ai_run_id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f-]{36}$")] | None = None
+    ai_run_id: RunId | None = None
     ai_prompt_version: Annotated[str, StringConstraints(pattern=r"^v[0-9]{1,3}$")] | None = None
     ai_qualified_at: datetime | None = None
 

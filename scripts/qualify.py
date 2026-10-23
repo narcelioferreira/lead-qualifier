@@ -1,6 +1,7 @@
 """Qualifica leads do dataset com o grafo real e mostra o resultado gravado na auditoria.
 
-Uso: `uv run python scripts/qualify.py L024 L005`. Gasta créditos da Tavily (com cache) e
+Uso: `uv run python scripts/qualify.py L024 L005` (com `--crm`, grava no HubSpot). Exige o
+servidor MCP no ar (`docker compose up -d tools-mcp`). Gasta créditos da Tavily (com cache) e
 tokens da Groq. Use só leads do split **dev**: o split test é reservado às avaliações.
 """
 
@@ -10,19 +11,20 @@ import uuid
 
 from app.config import get_settings
 from app.graph.runtime import production_graph
-from evals.dataset import DATASET_PATH, load_dataset
-
-FIXTURES = DATASET_PATH.parent / "fixtures" / "companies"
+from evals.dataset import load_dataset
 
 
-async def main(ids: list[str]) -> int:
+async def main(ids: list[str], *, crm: bool = False, prompt_version: str = "v2") -> int:
     items = {item.id: item for item in load_dataset()}
     for lead_id in ids:
         if lead_id not in items:
             raise SystemExit(f"lead desconhecido: {lead_id}")
         if items[lead_id].split != "dev":
             raise SystemExit(f"{lead_id} é do split test, reservado às avaliações (T16+)")
-    async with production_graph(get_settings(), fixtures_dir=FIXTURES) as (graph, audit):
+    async with production_graph(get_settings(), prompt_version=prompt_version, write_crm=crm) as (
+        graph,
+        audit,
+    ):
         for lead_id in ids:
             run_id = str(uuid.uuid4())
             raw = items[lead_id].to_lead_input().model_dump(mode="json")
@@ -42,6 +44,7 @@ async def main(ids: list[str]) -> int:
                 )
                 print(f"perfil={state['profile'].model_dump(mode='json')}")
                 print(f"justificativa: {result.rationale}")
+            print(f"crm={state.get('crm', '(desligado)')}")
             print(f"erros={state.get('errors', [])}")
             print(
                 f"auditoria: status={stored.status if stored else 'NÃO GRAVADO'} "
@@ -53,4 +56,7 @@ async def main(ids: list[str]) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ids", nargs="+")
-    raise SystemExit(asyncio.run(main(parser.parse_args().ids)))
+    parser.add_argument("--crm", action="store_true", help="grava empresa, contato e Note")
+    parser.add_argument("--prompt-version", default="v2", help="versão dos prompts (MVP: v2)")
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(main(args.ids, crm=args.crm, prompt_version=args.prompt_version)))

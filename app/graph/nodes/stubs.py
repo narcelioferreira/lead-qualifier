@@ -46,6 +46,11 @@ def assess(state: QualificationState) -> dict[str, Any]:
     }
 
 
+def write_to_crm(state: QualificationState) -> dict[str, Any]:
+    """CRM desligado (avaliações e testes): nada é gravado no HubSpot."""
+    return {"steps": [StepRecord(node="write_to_crm", route_reason="CRM desativado")]}
+
+
 def audit_log(state: QualificationState) -> dict[str, Any]:
     """Fecha a execução sem gravar no banco (a versão real está em `nodes/mvp.py`)."""
     status, result = finalize(state)

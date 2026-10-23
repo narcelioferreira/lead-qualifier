@@ -534,3 +534,31 @@
 - **Decisão (plano da T22):** uma demo para recrutador via `workflow_dispatch` só funciona como execução **gravada**, porque só quem tem escrita no repositório dispara um workflow. Ela foi registrada na T22 em modo offline (fixtures e respostas do LLM gravadas, sem secrets no GitHub e com o resultado no *Job Summary*).
 - **Teste:** o script rodou contra o container `tools-mcp` no ar: 401 sem token, 6 tools listadas e 5 resultados reais da Tavily para a Ciamed.
 - **Segurança:** o cliente lê só `TOOLS_MCP_TOKEN` (não recebe as chaves da Tavily nem do HubSpot, ASI03), o token não é impresso e a saída do terminal mostra o controle de autenticação funcionando.
+
+## T20: Grafo consumindo o MCP e nó `write_to_crm`
+- **`app/mcp_client.py`:** cliente do `lead-tools` com o SDK oficial `mcp` 2.x (Streamable HTTP, Bearer token). A fachada `LeadTools` devolve os mesmos modelos Pydantic das ferramentas diretas e levanta `ToolError`, então os nós tratam falha do MCP como tratavam falha da Tavily ou do site.
+  - erro da tool vira `ToolRequestError`, com a mensagem do servidor (já sem segredo);
+  - falha de transporte ou resposta fora do schema vira `ToolUnavailableError`, sem detalhe interno.
+- **Desvio do plano:** o plano pedia `langchain-mcp-adapters`. A versão 0.3.2 passou a exigir `mcp<2.0.0`, e o servidor da T19 usa o 2.x. A 0.3.1 ainda resolvia sem esse limite, por isso a T19 registrou que as versões eram compatíveis. Como o grafo tem arestas fixas e não entrega as tools ao LLM, o adapter não traria ganho, e o grafo usa o cliente oficial. A arquitetura e o plano foram atualizados.
+- **`app/graph/runtime.py`:** busca, site e HubSpot passam pelo MCP. O grafo recebe só `TOOLS_MCP_URL` e `TOOLS_MCP_TOKEN`; as chaves da Tavily e do HubSpot ficam no container de tools, que também serve as fixtures `.example` (o `fixtures_dir` saiu do runner e do `qualify.py`). `write_crm=False` é o padrão, então as avaliações não gravam no HubSpot.
+- **Nó `write_to_crm`** (`app/graph/nodes/crm.py`), entre `compute_score` e `audit_log`:
+  - ordem: empresa (pelo domínio) → contato (pelo e-mail) → associação → Note com a justificativa por critério, regras, tetos, revisão humana, `run_id` e versão do prompt;
+  - só grava execuções com score: lead rejeitado ou com falha não chega ao CRM;
+  - falha no CRM não derruba a execução (ASI08): vira erro na auditoria, e as etapas que dependem do id que faltou são puladas;
+  - o e-mail do lead é mascarado nos erros gravados (pendência da T18, LGPD).
+- **Idempotência por `run_id`:** os upserts usam as chaves únicas do HubSpot, e a tool `hubspot_create_note` passou a receber `run_id`. O servidor registra a Note por `run_id` no `tool_cache` e, se receber o mesmo `run_id` de novo, devolve a mesma Note com `created: false`.
+- **`scripts/qualify.py`:** `--crm` grava no HubSpot e `--prompt-version` tem `v2` como padrão, que é o MVP avaliado na T16.
+- **Problema encontrado na execução real e corrigido:** a primeira execução rodou contra um container `tools-mcp` ainda com o código da T19. O SDK **ignora em silêncio argumentos que não conhece**: o servidor antigo descartou o `run_id`, criou a Note e só o cliente percebeu a resposta fora do schema. Resultado: 2 Notes por empresa (as 2 duplicadas foram apagadas à mão pelo autor, porque o agente nunca apaga). Correção: `StrictMCPServer` recusa argumentos fora do schema da tool antes de executar, o equivalente a `extra="forbid"`. Assim, cliente e servidor em versões diferentes viram erro, e não uma escrita feita sem a garantia que o cliente pediu.
+- **Teste:**
+  - `tests/unit/test_mcp_client.py` (6): busca e site pelo MCP, erro da tool, integração ausente, CRM pelo MCP com respx, transporte fora sem detalhe e resposta fora do schema recusada;
+  - `tests/graph/test_crm.py` (11): grafo de ponta a ponta pelo MCP in-process, mesmo `run_id` duas vezes sem duplicar a Note, falha na empresa com e-mail mascarado, lead sem domínio, lead sem domínio e sem e-mail, rejeitado sem CRM, falha na Note, allowlist de campos, CRM desligado, Note com justificativa por critério e guarda sem score;
+  - `test_mcp_server.py`: argumentos desconhecidos recusados sem chamar o HubSpot (3 casos);
+  - `test_config.py`: `TOOLS_MCP_URL` aceita loopback, nome de serviço do compose e `https`, e recusa `http` para outro host e credencial na URL;
+  - **mutação:** desligar o registro da Note por `run_id`, a máscara do e-mail, a guarda "só com score", o `https` do MCP, a recusa de credencial na URL, a validação de schema no cliente ou a recusa de argumentos desconhecidos derruba pelo menos 1 teste em cada caso;
+  - **execução real** (container reconstruído, Groq, prompt `v2`, 2 leads do dev): L002 Ciamed → Tier B (67) e L024 Gobor → Tier A (100). Empresa, contato, associação e Note criados no HubSpot, `ai_*` atualizados e auditoria `completed`. Repetir o `write_to_crm` com o mesmo `run_id` devolveu os mesmos ids e `note_created: false`. Conferido pela API do HubSpot: uma Note por execução.
+- **Segurança:**
+  - ASI03: o grafo só tem o token do servidor MCP. `TOOLS_MCP_URL` exige `https` fora da máquina e da rede do compose, para o token não trafegar sem criptografia, e recusa credencial na URL;
+  - ASI02: argumentos fora do schema são recusados no servidor e a resposta é validada no cliente;
+  - LGPD: e-mail mascarado nos erros do CRM gravados na auditoria;
+  - ASI08: falha no CRM não perde o resultado da qualificação.
+- **Limitações:** o L002 saiu B e o rótulo humano é A, uma diferença do MVP que já existe no dev e fica para os ajustes do dev. Se o HubSpot aceitar a Note e a gravação no `tool_cache` falhar, um retry cria outra Note; o risco é baixo porque o cache fica no mesmo Postgres que já atendeu a busca.

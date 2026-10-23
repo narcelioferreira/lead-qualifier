@@ -6,9 +6,9 @@
     research → normalize ─(falhou)─► audit_log
                    │
                    ▼
-               assess → compute_score → audit_log ─► END
+               assess → compute_score → write_to_crm → audit_log ─► END
 
-Os nós de pesquisa, LLM e auditoria são injetados (`GraphNodes`): stubs na T13, reais na T14
+Os nós de pesquisa, LLM, CRM e auditoria são injetados (`GraphNodes`): stubs na T13, reais na T14
 e mocks nos testes de grafo. `validate_input` e `compute_score` são código determinístico e
 não mudam.
 """
@@ -41,6 +41,7 @@ class GraphNodes:
     research: Node = stubs.research
     normalize: Node = stubs.normalize
     assess: Node = stubs.assess
+    write_to_crm: Node = stubs.write_to_crm
     audit_log: Node = stubs.audit_log
 
 
@@ -52,6 +53,7 @@ def build_graph(nodes: GraphNodes | None = None) -> CompiledGraph:
     graph.add_node("normalize", nodes.normalize)
     graph.add_node("assess", nodes.assess)
     graph.add_node("compute_score", core.compute_score)
+    graph.add_node("write_to_crm", nodes.write_to_crm)
     graph.add_node("audit_log", nodes.audit_log)
 
     graph.add_edge(START, "validate_input")
@@ -67,7 +69,8 @@ def build_graph(nodes: GraphNodes | None = None) -> CompiledGraph:
         {"continue": "assess", "fail": "audit_log"},
     )
     graph.add_edge("assess", "compute_score")
-    graph.add_edge("compute_score", "audit_log")
+    graph.add_edge("compute_score", "write_to_crm")
+    graph.add_edge("write_to_crm", "audit_log")
     graph.add_edge("audit_log", END)
     return graph.compile()
 

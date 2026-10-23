@@ -20,7 +20,7 @@ Este é um projeto acadêmico com padrão profissional, que será documentado e 
   Cliente MCP  ───► │   ├─ /v1/... REST                                               │
  (Claude Desktop,   │   ├─ /mcp  → servidor MCP "lead-qualifier" (tool qualify_lead) │
   Cursor)           │   └─ LangGraph runtime (grafo + checkpointer Postgres)          │
-                    │          │ cliente MCP (langchain-mcp-adapters)                 │
+                    │          │ cliente MCP (SDK oficial `mcp` 2.x)                  │
                     │          ▼                                                      │
                     │  tools-mcp (servidor MCP "lead-tools") ──► Tavily / sites / HubSpot
                     │          │                                                      │
@@ -149,11 +149,11 @@ Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e cu
 | `hubspot_upsert_company(company)` | Upsert da empresa (nome, domínio e `ai_*`, validados pela allowlist) |
 | `hubspot_upsert_contact(contact)` | Upsert do contato (e-mail, cargo e `ai_*`) |
 | `hubspot_associate(contact_id, company_id)` | Associa contato e empresa |
-| `hubspot_create_note(body, company_ids, contact_ids)` | Cria a Note com a justificativa (HTML escapado) |
+| `hubspot_create_note(body, run_id, company_ids, contact_ids)` | Cria a Note com a justificativa (HTML escapado). Idempotente por `run_id` |
 
 **Servidor `lead-qualifier`** (montado em `/mcp` na própria API), com as tools `qualify_lead(lead)` e `get_run(run_id)`. O agente pode ser usado diretamente no Claude Desktop, no Cursor ou no MCP Inspector.
 
-O grafo consome o `lead-tools` via `langchain-mcp-adapters`. Assim os segredos do HubSpot e do Tavily ficam só no container de tools.
+O grafo consome o `lead-tools` pelo cliente oficial do SDK `mcp` 2.x (`app/mcp_client.py`). Assim os segredos do HubSpot e do Tavily ficam só no container de tools. O `langchain-mcp-adapters` foi descartado na T20: a versão 0.3.2 exige `mcp<2`, incompatível com o servidor da T19. Como o grafo tem arestas fixas e não entrega as tools ao LLM, o adapter não traria ganho.
 
 ---
 
@@ -232,7 +232,7 @@ lead-qualifier/
 ```
 
 ## 13. Stack fechada
-Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · langchain-mcp-adapters · `mcp` (FastMCP) · Groq API (gpt-oss-20b + gpt-oss-120b, pesos abertos fixos) · Ollama (SLM de 1B a 4B, escolhido por benchmark no subconjunto do guardrail) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
+Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · `mcp` 2.x (servidor `MCPServer` e cliente oficial) · Groq API (gpt-oss-20b + gpt-oss-120b, pesos abertos fixos) · Ollama (SLM de 1B a 4B, escolhido por benchmark no subconjunto do guardrail) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
 
 ## 14. ADRs a registrar em `docs/adr/`
 1. LangGraph como orquestrador, em vez de chain ou PydanticAI

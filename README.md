@@ -36,7 +36,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | | T16: baseline × MVP no split dev, ajuste de prompt e rodada única no test | ✅ |
 | E. Integrações | T17–T18: propriedades `ai_*` e cliente HubSpot idempotente (sem duplicar registros) | ✅ |
 | | T19: servidor MCP `lead-tools` (6 tools, Bearer token, container sem root) | ✅ |
-| | T20–T22: grafo via MCP e `write_to_crm`, API FastAPI, Docker | ⏳ |
+| | T20: grafo via MCP e `write_to_crm` (Note idempotente por `run_id`) | ✅ |
+| | T21–T22: API FastAPI e Docker de ponta a ponta | ⏳ |
 | F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
@@ -50,22 +51,24 @@ O plano completo, com os 36 passos e seus critérios de aceite, está em [`docs/
 flowchart LR
     S([início]) --> V[validate_input<br/><i>código</i>]
     V -- inválido --> AU
-    V --> R[research<br/><i>site + Tavily</i>]
+    V --> R[research<br/><i>site + Tavily via MCP</i>]
     R --> N[normalize_to_ontology<br/><i>LLM extrai fatos</i>]
     N -- falha --> AU
     N --> A[assess_criteria<br/><i>LLM justifica</i>]
     A --> C[compute_score<br/><i>código: rubrica</i>]
-    C --> AU[audit_log<br/><i>Postgres</i>]
+    C --> W[write_to_crm<br/><i>HubSpot via MCP</i>]
+    W --> AU[audit_log<br/><i>Postgres</i>]
     AU --> E([fim])
 ```
 
 | Etapa | Quem faz | O que faz |
 |---|---|---|
 | `validate_input` | código | Valida o contrato, sanitiza o texto (remove caracteres invisíveis usados para esconder injeções) e bloqueia domínios internos (SSRF) |
-| `research` | ferramentas | Lê a home e a página "sobre" do site da empresa (com proteção SSRF em cada redirect) e faz uma busca na Tavily, com cache no Postgres |
+| `research` | ferramentas (MCP) | Lê a home e a página "sobre" do site da empresa (com proteção SSRF em cada redirect) e faz uma busca na Tavily, com cache no Postgres. Tudo pelo servidor `lead-tools` |
 | `normalize_to_ontology` | LLM (`gpt-oss-20b`) | Extrai fatos e classificações da ontologia, com certeza e ids das evidências. O **código** mapeia: setor pelo CNAE (só se o CNAE aparecer nas evidências), região pela UF/país e porte por funcionários ou frota × 2,5 |
 | `assess_criteria` | LLM | Escreve a justificativa citando as evidências (`E1`, `E2`...). Não altera valores nem pontua |
 | `compute_score` | código | Rubrica de 5 critérios (soma 100), regras eliminatórias K1–K7, tetos C1–C4 e marcação de fronteira e de revisão humana |
+| `write_to_crm` | ferramentas (MCP) | Grava empresa (pelo domínio), contato (pelo e-mail), associação e a Note com a justificativa por critério no HubSpot. Idempotente por `run_id`; falha no CRM vira erro na auditoria, sem perder o resultado |
 | `audit_log` | código | Grava a execução completa (entrada, passos, tokens, custo, latência e resultado) em `agent_runs` e `agent_steps` |
 
 O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd), e um teste falha se ele ficar desatualizado. A arquitetura-alvo, com guardrail, RAG, roteamento, revisão humana e CRM, está em [`docs/00-arquitetura.md`](docs/00-arquitetura.md).
@@ -74,7 +77,7 @@ O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd
 
 ## Servidor MCP `lead-tools`
 
-As ferramentas do agente ficam atrás de um servidor **MCP** (SDK oficial `mcp` 2.x, transporte Streamable HTTP), num container separado. As chaves da Tavily e do HubSpot só existem nele; o grafo passa a consumi-lo na T20.
+As ferramentas do agente ficam atrás de um servidor **MCP** (SDK oficial `mcp` 2.x, transporte Streamable HTTP), num container separado. As chaves da Tavily e do HubSpot só existem nele: desde a T20, o grafo pesquisa e grava no CRM por ele, só com o token do próprio servidor.
 
 | Tool | Tipo | O que faz |
 |---|---|---|
@@ -258,7 +261,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 
 ## Qualidade
 
-- **415 testes** unitários e de grafo, sem rede, e **20 testes de integração** contra serviços reais. Cobertura de ~95%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
+- **515 testes** unitários e de grafo, sem rede, e **22 testes de integração** contra serviços reais. Cobertura de ~95%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
 - Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):

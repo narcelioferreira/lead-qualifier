@@ -10,16 +10,18 @@ graph TD;
 	normalize(normalize)
 	assess(assess)
 	compute_score(compute_score)
+	write_to_crm(write_to_crm)
 	audit_log(audit_log)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> validate_input;
 	assess --> compute_score;
-	compute_score --> audit_log;
+	compute_score --> write_to_crm;
 	normalize -. &nbsp;continue&nbsp; .-> assess;
 	normalize -. &nbsp;fail&nbsp; .-> audit_log;
 	research --> normalize;
 	validate_input -. &nbsp;reject&nbsp; .-> audit_log;
 	validate_input -. &nbsp;continue&nbsp; .-> research;
+	write_to_crm --> audit_log;
 	audit_log --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0

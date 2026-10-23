@@ -25,6 +25,7 @@ FIXTURES = Path(__file__).resolve().parents[2] / "evals" / "fixtures" / "compani
 FAKE_KEY = "tvly-test-nao-e-uma-chave-real-000000"  # pragma: allowlist secret
 FAKE_TOKEN = "pat-na1-teste-nao-e-um-token-real-0000"  # noqa: S105  # pragma: allowlist secret
 SERVER_TOKEN = "token-do-servidor-mcp-de-teste-0123456789"  # noqa: S105  # pragma: allowlist secret
+RUN_ID = "0b6f1a52-3c1e-4f0e-9a51-2f8d6f0c9e11"
 LEAKY_DSN = "postgres://usuario:senha@db"  # pragma: allowlist secret
 TOOLS = {
     "search_company_web",
@@ -72,7 +73,7 @@ async def test_lista_as_tools_com_anotacoes() -> None:
         annotations = tools[name].annotations
         assert annotations.read_only_hint is False
         assert annotations.destructive_hint is False  # nenhuma tool apaga
-    assert tools["hubspot_create_note"].annotations.idempotent_hint is False
+        assert annotations.idempotent_hint is True  # upsert pela chave; Note por run_id
     company_schema = json.dumps(tools["hubspot_upsert_company"].input_schema)
     assert "ai_fit_tier" in company_schema and "hubspot_owner_id" not in company_schema
 
@@ -148,15 +149,37 @@ async def test_hubspot_upsert_contact_associate_e_note(respx_mock: respx.Router)
         )
         created = await client.call_tool(
             "hubspot_create_note",
-            {"body": "Tier A <script>", "company_ids": ["111"], "contact_ids": ["333"]},
+            {
+                "body": "Tier A <script>",
+                "run_id": RUN_ID,
+                "company_ids": ["111"],
+                "contact_ids": ["333"],
+            },
         )
 
     assert contact.structured_content == {"id": "333", "created": False}
     assert assoc.structured_content == {"contact_id": "333", "company_id": "111"}
-    assert created.structured_content == {"id": "444"}
+    assert created.structured_content == {"id": "444", "created": True}
     assert (
         "&lt;script&gt;" in json.loads(note.calls[0].request.content)["properties"]["hs_note_body"]
     )
+
+
+@respx.mock(base_url=HUBSPOT_URL)
+async def test_note_e_idempotente_por_run_id(respx_mock: respx.Router) -> None:
+    """Repetir a escrita da mesma execução (retry do grafo) não duplica a Note."""
+    note = respx_mock.post("/crm/v3/objects/notes").respond(201, json={"id": "444"})
+    args = {"body": "Tier A", "run_id": RUN_ID, "company_ids": ["111"]}
+    async with Client(build_server(_deps())) as client:
+        first = await client.call_tool("hubspot_create_note", args)
+        again = await client.call_tool("hubspot_create_note", args)
+        other = await client.call_tool(
+            "hubspot_create_note", args | {"run_id": RUN_ID.replace("0b6f", "1b6f")}
+        )
+    assert first.structured_content == {"id": "444", "created": True}
+    assert again.structured_content == {"id": "444", "created": False}
+    assert other.structured_content["created"] is True
+    assert note.call_count == 2
 
 
 @pytest.mark.parametrize(
@@ -171,7 +194,8 @@ async def test_hubspot_upsert_contact_associate_e_note(respx_mock: respx.Router)
             {"company": {"name": "ab", "domain": "x.com.br", "ai_fit_tier": "S"}},
         ),
         ("hubspot_associate", {"contact_id": "1/../2", "company_id": "3"}),
-        ("hubspot_create_note", {"body": "x", "company_ids": ["abc"]}),
+        ("hubspot_create_note", {"body": "x", "run_id": RUN_ID, "company_ids": ["abc"]}),
+        ("hubspot_create_note", {"body": "x", "run_id": "1; drop", "company_ids": ["1"]}),
     ],
 )
 async def test_argumento_invalido_nao_chama_o_hubspot(name: str, args: dict[str, Any]) -> None:
@@ -179,6 +203,25 @@ async def test_argumento_invalido_nao_chama_o_hubspot(name: str, args: dict[str,
         result = await _call(name, args)
         assert not router.calls
     assert result.is_error
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        # Cliente antigo ou adulterado: o SDK ignoraria o argumento e a escrita seguiria.
+        ("hubspot_create_note", {"body": "x", "run_id": RUN_ID, "dry_run": True}),
+        ("hubspot_associate", {"contact_id": "1", "company_id": "3", "force": True}),
+        ("fetch_company_site", {"domain": "rioguamadistribuidora.example", "follow": "x"}),
+    ],
+)
+async def test_argumento_desconhecido_e_recusado_sem_executar(
+    name: str, args: dict[str, Any]
+) -> None:
+    with respx.mock(base_url=HUBSPOT_URL) as router:
+        result = await _call(name, args)
+        assert not router.calls
+    assert result.is_error
+    assert "argumentos desconhecidos" in _text(result)
 
 
 @respx.mock(base_url=HUBSPOT_URL)

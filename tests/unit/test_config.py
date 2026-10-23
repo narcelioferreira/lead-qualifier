@@ -11,7 +11,14 @@ DB_URL = "postgresql+psycopg://u:p@localhost:5432/db"
 def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
     # Não deixa um .env local ou variáveis da máquina vazarem para os testes.
     monkeypatch.chdir(tmp_path)  # type: ignore[arg-type]
-    for var in ["API_KEY", "DATABASE_URL", "GROQ_API_KEY", "APP_ENV", "MAX_MESSAGE_CHARS"]:
+    for var in [
+        "API_KEY",
+        "DATABASE_URL",
+        "GROQ_API_KEY",
+        "APP_ENV",
+        "MAX_MESSAGE_CHARS",
+        "TOOLS_MCP_URL",
+    ]:
         monkeypatch.delenv(var, raising=False)
 
 
@@ -56,3 +63,37 @@ def test_invalid_env_value_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "staging")
     with pytest.raises(ValidationError):
         Settings()  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:8001/mcp",
+        "http://localhost:8001/mcp",
+        "http://tools-mcp:8001/mcp",
+        "https://tools.exemplo.com.br/mcp",
+    ],
+)
+def test_tools_mcp_url_aceita_local_compose_ou_https(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setenv("TOOLS_MCP_URL", url)
+    settings = Settings(api_key=STRONG_KEY, database_url=DB_URL)  # type: ignore[arg-type]
+    assert str(settings.tools_mcp_url).startswith(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://tools.exemplo.com.br/mcp",
+        "http://10.0.0.5:8001/mcp",
+        "https://u:p@tools.exemplo.com/mcp",
+    ],
+)
+def test_tools_mcp_url_que_exporia_o_token_e_recusada(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    # Token em http para outra máquina trafega em claro; credencial na URL vaza em logs.
+    monkeypatch.setenv("TOOLS_MCP_URL", url)
+    with pytest.raises(ValidationError, match="TOOLS_MCP_URL"):
+        Settings(api_key=STRONG_KEY, database_url=DB_URL)  # type: ignore[arg-type]

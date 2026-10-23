@@ -41,6 +41,8 @@ class QualificationState(GraphInput, total=False):
     confidence: float
     score: ScoreResult
     result: QualificationResult
+    # Ids gravados no HubSpot pelo `write_to_crm` (company_id, contact_id, note_id).
+    crm: dict[str, str]
     steps: Annotated[list[StepRecord], operator.add]
     errors: Annotated[list[str], operator.add]
 

@@ -136,6 +136,7 @@ Groq API key (plano gratuito) · Tavily API key · HubSpot developer test accoun
 
 ### T20: Grafo consumindo MCP e nó `write_to_crm`
 - **Fazer:** trocar as chamadas diretas por `langchain-mcp-adapters` e implementar `write_to_crm` com idempotência por `run_id`.
+- **Desvio (T20):** o grafo usa o cliente oficial do SDK `mcp` 2.x. O `langchain-mcp-adapters` 0.3.2 exige `mcp<2` (ver CHANGELOG).
 - **Testar:** testes de grafo com servidor MCP mockado e uma execução de ponta a ponta real com 2 leads, gerando registros e Note no HubSpot.
 - **Aceite:** testes verdes e Note visível no HubSpot com a justificativa por critério.
 

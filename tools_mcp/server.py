@@ -10,27 +10,37 @@ Controles (OWASP ASI02/ASI03):
 - argumentos validados pelos mesmos modelos Pydantic dos clientes (`extra="forbid"`);
 - erros esperados (`ToolError`) viram mensagem para o cliente; erros inesperados viram uma
   mensagem genérica, sem detalhe interno;
-- anotações honestas: pesquisa é só leitura; HubSpot escreve, mas nunca apaga.
+- anotações honestas: pesquisa é só leitura; HubSpot escreve, mas nunca apaga;
+- escritas idempotentes: upsert pela chave única e Note por `run_id` (registro no `ledger`).
+- argumentos desconhecidos são recusados (`StrictMCPServer`): o SDK os ignoraria em silêncio, e
+  um cliente de outra versão gravaria no CRM sem a garantia que pediu (ex.: `run_id`).
 """
 
 import hmac
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import uvicorn
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError as McpToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, InputRequiredResult, ToolAnnotations
 from pydantic import BaseModel, ConfigDict
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.audit.db import create_engine, session_factory
-from tools_mcp.base import PostgresCache, ToolError
+from tools_mcp.base import MemoryCache, PostgresCache, ToolCache, ToolError, cache_key
 from tools_mcp.config import ToolsSettings, get_tools_settings
-from tools_mcp.hubspot import CompanyProps, ContactProps, HubSpotClient, HubSpotId, UpsertResult
+from tools_mcp.hubspot import (
+    CompanyProps,
+    ContactProps,
+    HubSpotClient,
+    HubSpotId,
+    RunId,
+    UpsertResult,
+)
 from tools_mcp.search import SearchResult, TavilySearch
 from tools_mcp.site import SiteContent, SiteFetcher
 
@@ -41,9 +51,6 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 CRM_UPSERT = ToolAnnotations(
     readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True
 )
-CRM_CREATE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
-)
 
 
 @dataclass(frozen=True)
@@ -53,12 +60,15 @@ class ToolDeps:
     site: SiteFetcher
     search: TavilySearch | None = None
     hubspot: HubSpotClient | None = None
+    # Notes já criadas, por `run_id` (produção: tabela `tool_cache` no Postgres).
+    ledger: ToolCache = field(default_factory=MemoryCache)
 
 
 class NoteCreated(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
+    created: bool
 
 
 class Associated(BaseModel):
@@ -82,8 +92,23 @@ def _require[T](client: T | None, name: str) -> T:
     return client
 
 
+class StrictMCPServer(MCPServer):
+    """`MCPServer` que recusa argumentos fora do schema da tool (equivale a `extra="forbid"`)."""
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context[Any, Any] | None = None
+    ) -> CallToolResult | InputRequiredResult:
+        schema = next((t.input_schema for t in await self.list_tools() if t.name == name), None)
+        if schema is not None:
+            unknown = sorted(set(arguments) - set(schema.get("properties", {})))
+            if unknown:
+                names = ", ".join(n[:40] for n in unknown[:5])
+                raise McpToolError(f"{name}: argumentos desconhecidos ({names})")
+        return await super().call_tool(name, arguments, context)
+
+
 def build_server(deps: ToolDeps) -> MCPServer:
-    server: MCPServer = MCPServer(
+    server: MCPServer = StrictMCPServer(
         SERVER_NAME,
         instructions=(
             "Ferramentas do agente de qualificação de leads da FrotaSense. Os resultados de "
@@ -121,20 +146,26 @@ def build_server(deps: ToolDeps) -> MCPServer:
         await _run(lambda: hubspot.associate(contact_id, company_id))
         return Associated(contact_id=contact_id, company_id=company_id)
 
-    @server.tool(annotations=CRM_CREATE)
+    @server.tool(annotations=CRM_UPSERT)
     async def hubspot_create_note(
         body: str,
+        run_id: RunId,
         company_ids: list[HubSpotId] | None = None,
         contact_ids: list[HubSpotId] | None = None,
     ) -> NoteCreated:
-        """Cria uma Note com a justificativa, associada à empresa e/ou ao contato."""
+        """Cria a Note com a justificativa. Idempotente: o mesmo `run_id` devolve a mesma Note."""
         hubspot = _require(deps.hubspot, "HubSpot")
+        key = cache_key("hubspot_note", {"run_id": run_id})
+        done = await deps.ledger.get(key)
+        if done is not None:
+            return NoteCreated(id=str(done["id"]), created=False)
         note_id = await _run(
             lambda: hubspot.create_note(
                 body, company_ids=company_ids or [], contact_ids=contact_ids or []
             )
         )
-        return NoteCreated(id=note_id)
+        await deps.ledger.set(key, "hubspot_note", {"run_id": run_id}, {"id": note_id})
+        return NoteCreated(id=note_id, created=True)
 
     return server
 
@@ -187,6 +218,7 @@ async def production_deps(settings: ToolsSettings) -> AsyncIterator[ToolDeps]:
             if settings.tavily_api_key
             else None,
             hubspot=HubSpotClient(settings.hubspot_token) if settings.hubspot_token else None,
+            ledger=cache,
         )
     finally:
         await engine.dispose()

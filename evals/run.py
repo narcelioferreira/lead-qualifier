@@ -30,7 +30,6 @@ from evals.metrics import Prediction, compute_metrics, render_report
 
 RUNS_DIR = DATASET_PATH.parent / "runs"
 REPORTS_DIR = DATASET_PATH.parent / "reports"
-FIXTURES_DIR = DATASET_PATH.parent / "fixtures" / "companies"
 # Pausa entre leads: o plano gratuito da Groq tem 8K tokens/min e o MVP gasta ~4,5K por lead.
 DEFAULT_PAUSE_S = 20.0
 MAX_ERRORS = 5
@@ -49,9 +48,7 @@ async def _mvp(prompt_version: str) -> AsyncIterator[Graph]:
     from app.graph.runtime import production_graph
 
     settings = get_settings()
-    async with production_graph(
-        settings, fixtures_dir=FIXTURES_DIR, prompt_version=prompt_version
-    ) as (graph, _audit):
+    async with production_graph(settings, prompt_version=prompt_version) as (graph, _audit):
         yield graph
 
 
@@ -59,7 +56,7 @@ async def _mvp(prompt_version: str) -> AsyncIterator[Graph]:
 async def _baseline(prompt_version: str) -> AsyncIterator[Graph]:
     from app.graph.runtime import baseline_graph
 
-    async with baseline_graph(get_settings(), fixtures_dir=FIXTURES_DIR) as graph:
+    async with baseline_graph(get_settings()) as graph:
         yield graph
 
 

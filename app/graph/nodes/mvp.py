@@ -1,7 +1,8 @@
 """Nós reais do MVP (T14): pesquisa simples, extração e justificativa com o mini, auditoria.
 
-As dependências (LLM, busca, site, auditoria) são injetadas por `MvpDeps`: produção usa Groq,
-Tavily, sites e Postgres; os testes de grafo usam mocks com respostas fixas.
+As dependências (LLM, busca, site, CRM, auditoria) são injetadas por `MvpDeps`: produção usa
+Groq, o servidor MCP `lead-tools` (busca, site e HubSpot, desde a T20) e Postgres; os testes de
+grafo usam mocks com respostas fixas.
 """
 
 import json
@@ -17,7 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.audit.repository import AuditRepository, StepRecord
 from app.graph.builder import GraphNodes, Node
+from app.graph.nodes import stubs
 from app.graph.nodes.core import finalize, latency_ms
+from app.graph.nodes.crm import CrmWriter, make_write_to_crm
 from app.graph.nodes.extraction import (
     Assessment,
     Extraction,
@@ -87,6 +90,8 @@ class MvpDeps:
     search: Searcher
     site: SiteReader
     audit: AuditRepository | None = None
+    # `None` desliga o CRM (avaliações): o nó `write_to_crm` só registra que não gravou.
+    crm: CrmWriter | None = None
     model_key: str = "groq-mini"
     prompt_version: str = "v1"
     # Digest da configuração verificada (app/integrity.py), gravado em cada execução.
@@ -353,7 +358,13 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
                 update["errors"] = [f"audit_log: falha ao gravar ({type(exc).__name__})"]
         return update
 
-    return GraphNodes(research=research, normalize=normalize, assess=assess, audit_log=audit_log)
+    return GraphNodes(
+        research=research,
+        normalize=normalize,
+        assess=assess,
+        write_to_crm=make_write_to_crm(deps.crm) if deps.crm else stubs.write_to_crm,
+        audit_log=audit_log,
+    )
 
 
 BASELINE_PROMPT_VERSION = "baseline-v1"

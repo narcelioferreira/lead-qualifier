@@ -83,7 +83,7 @@ async def test_production_graph_refuses_to_start_on_drift(
         api_key=SecretStr("x" * 40),
         database_url=SecretStr("postgresql+psycopg://u:p@localhost:1/db"),
         groq_api_key=SecretStr("gsk-teste"),
-        tavily_api_key=SecretStr("tvly-teste"),
+        tools_mcp_token=SecretStr("t" * 40),
     )
     with pytest.raises(IntegrityError, match="rubric: alterado"):
         async with runtime.production_deps(settings):
