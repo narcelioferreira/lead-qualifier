@@ -631,6 +631,7 @@
   - **demo em ambiente limpo:** um diretório só com os arquivos versionados e `uv sync --locked --no-dev` rodou a demo com os 5 leads, como o Actions fará;
   - **smoke real** (autor, terminal do Ubuntu): `docker compose build --no-cache api migrate` e `scripts/smoke_e2e.sh`. A execução `c38af31b` foi criada pela API em Docker e terminou `completed`, Tier A (100). Pela API do HubSpot, a empresa ficou com `ai_run_id` dessa execução e `ai_fit_tier=A`, e a Note tem a justificativa completa (995 caracteres; a interface do HubSpot só recolhe o texto longo);
   - `make check`: 575 testes (cobertura de 93%), ruff, mypy strict, bandit, detect-secrets e pip-audit.
+  - **Actions:** depois do push, o CI passou e o workflow `Demo offline` rodou em 16 s, sem secrets, com o mesmo resultado da execução local (run 40022574667).
 - **Problemas corrigidos:**
   - o teste da guarda de rede passava mesmo com a guarda desligada, porque o sandbox desta máquina também bloqueia a rede com `PermissionError`. Agora ele exige a mensagem da própria guarda;
   - o `create_connection` resolve o nome mesmo para IP numérico, então a guarda passou a liberar `getaddrinfo` para loopback;

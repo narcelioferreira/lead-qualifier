@@ -123,7 +123,7 @@ O MCP Inspector v2 não conecta a este servidor, e isso é esperado: ele roda no
 
 ## Demo sem clonar
 
-O workflow **[Demo offline](../../actions/workflows/demo.yml)** roda a API e o grafo de verdade no GitHub Actions, sem secrets e sem rede, e publica o resultado no *Job Summary*: o tier de cada lead ao lado do rótulo humano, os critérios, a justificativa, o 401 sem chave e o 422 quando o cliente tenta mandar o próprio tier. As respostas da Groq, da Tavily e dos sites de 5 leads do split dev foram gravadas uma vez (`evals/demo/cassette.json`, com e-mails removidos) e são reproduzidas na demo. A rubrica, as regras, o detector de injeção e o saneamento rodam a cada execução, e um audit hook do Python bloqueia qualquer conexão fora do loopback.
+O workflow **[Demo offline](https://github.com/narcelioferreira/lead-qualifier/actions/workflows/demo.yml)** roda a API e o grafo de verdade no GitHub Actions, sem secrets e sem rede, e publica o resultado no *Job Summary*: o tier de cada lead ao lado do rótulo humano, os critérios, a justificativa, o 401 sem chave e o 422 quando o cliente tenta mandar o próprio tier. **[Última execução](https://github.com/narcelioferreira/lead-qualifier/actions/runs/40022574667)** (16 s, concordância de 4/5 com o rótulo humano). As respostas da Groq, da Tavily e dos sites de 5 leads do split dev foram gravadas uma vez (`evals/demo/cassette.json`, com e-mails removidos) e são reproduzidas na demo. A rubrica, as regras, o detector de injeção e o saneamento rodam a cada execução, e um audit hook do Python bloqueia qualquer conexão fora do loopback.
 
 ```bash
 uv run python -m evals.demo            # a mesma demo, local, em ~2 s

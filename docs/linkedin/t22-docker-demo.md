@@ -6,3 +6,4 @@
 - Para provar que a demo é mesmo offline, um *audit hook* do Python bloqueia qualquer conexão fora da própria máquina. Se algum código tentar sair para a internet, a demo quebra.
 - A demo não esconde erro: num dos 5 leads o agente discordou do rótulo humano (B → C), e o relatório mostra isso.
 - 📸 GIF: `docker compose up` → `scripts/smoke_e2e.sh` → resultado no `/docs` e a Note no HubSpot (gravado pelo autor). Print do Job Summary da execução "Demo offline" no Actions.
+- Execução da demo no Actions (16 s, sem secrets): https://github.com/narcelioferreira/lead-qualifier/actions/runs/40022574667
