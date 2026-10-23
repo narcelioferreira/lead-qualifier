@@ -470,3 +470,30 @@
 - **Problemas corrigidos:**
   - o primeiro token do `.env` era uma chave no formato UUID (legada ou de desenvolvedor), recusada com 401. Por isso o 401 (token inválido) e o 403 (escopo faltando) agora têm mensagens separadas;
   - o `.secrets.baseline` foi atualizado só pelo deslocamento de linhas do `.env.example`.
+
+## T18: Cliente HubSpot
+- `tools_mcp/hubspot.py` (`HubSpotClient`): `upsert_company`, `upsert_contact`, `associate` e `create_note`, que viram as tools MCP `hubspot_*` na T19. O retry com backoff em 429 (respeitando o `retry-after`) é o mesmo das outras integrações (`app/retry.py`).
+- `tools_mcp/hubspot_http.py`: base URL, Bearer, retry e mapeamento de erros, compartilhados com o setup da T17 (que deixou de ter um `_send` próprio). O 403 agora mostra o escopo que falta, vindo da resposta do HubSpot.
+- **Idempotência sem duplicar registros:**
+  - **contato:** upsert atômico por `email` (`batch/upsert`, `idProperty=email`);
+  - **empresa:** primeiro busca por `domain`, para achar empresas criadas à mão, e atualiza a mais antiga. Sem resultado, faz upsert atômico por **`ai_company_domain`**, uma 8ª propriedade nova (só em companies, `hasUniqueValue`), criada pelo setup da T17;
+  - **motivo:** a busca do HubSpot leva alguns segundos para indexar registros novos. Só com busca e criação, o mesmo lead rodado duas vezes em sequência duplicaria a empresa. O upsert pela chave única fecha essa janela;
+  - **associação:** `PUT` da associação padrão (v4), idempotente por natureza;
+  - **Note:** uma por qualificação. A idempotência por `run_id` fica no `write_to_crm` (T20), como no plano.
+- **Setup da T17 estendido:** o `PropertySpec` ganhou `unique` e `object_types`. O `hasUniqueValue` divergente é recusado (o HubSpot só permite defini-lo na criação) e fica fora do PATCH. Na conta real: `{'created': 1, 'unchanged': 16}`.
+- **Escopos acrescentados à chave de serviço:** `crm.objects.companies.read/write` e `crm.objects.contacts.read/write`. A Note foi criada e associada sem escopo próprio de notas.
+- **Teste:**
+  - `tests/unit/test_hubspot_client.py` (28 testes, respx): formatação das `ai_*` (datetime em ms UTC), allowlist e limites, domínio normalizado, HTML escapado e truncado, empresa nova (upsert pela chave), empresa existente (PATCH sem a chave), busca atrasada caindo no upsert, contato por e-mail, associação, Note com os dois tipos de associação, IDs inválidos sem chamar a API, 429 seguido de sucesso, 401 sem token, 403 com o escopo e 5xx.
+  - **Mutação:** desligar o escape de HTML, a allowlist, a validação numérica de IDs, o saneamento e truncamento da Note, a chave única ou a busca por domínio derruba pelo menos 1 teste em cada caso.
+  - **Conta real** (`tests/integration/test_hubspot_records_live.py`): o mesmo lead foi gravado duas vezes seguidas e devolveu os mesmos IDs. Depois da indexação, a busca confirmou 1 empresa, 1 contato e 2 Notes (uma por execução). O teste do setup continua verde.
+  - `make check`: 462 testes (cobertura de 95%), ruff, mypy strict, bandit, detect-secrets e pip-audit.
+- **Segurança (ASI02/ASI03):**
+  - só propriedades da allowlist (`extra="forbid"`): o agente não consegue gravar `hubspot_owner_id`, `lifecyclestage` etc.;
+  - tier só com valores do enum, score de 0 a 100, confiança de 0 a 1, `run_id` UUID e versão `vN`;
+  - IDs só numéricos, inclusive os que vêm da resposta, o que impede path traversal na URL;
+  - o corpo da Note vem do LLM e é tratado como não confiável: saneado, escapado para HTML e truncado em 20K caracteres;
+  - nenhuma operação de exclusão.
+- **Achados:**
+  - o HubSpot recusa e-mail em `.example` (`INVALID_EMAIL`). O teste usa `example.com`, também reservado (RFC 2606);
+  - **criação automática de empresas pelo HubSpot:** ao gravar o contato `compras.t18@example.com`, o próprio HubSpot criou a empresa `example.com` e associou o contato a ela (configuração "criar e associar empresas a contatos"). Com essa configuração ligada, o domínio do e-mail pode gerar uma empresa paralela, fora do controle do agente. Recomendação: desligá-la na conta (Configurações → Objetos → Empresas). A empresa `example.com` criada no teste deve ser apagada na interface, porque o agente não tem escopo de exclusão, de propósito;
+  - as mensagens de erro 400 do HubSpot podem ecoar o valor rejeitado (por exemplo, o e-mail), truncado em 200 caracteres. Na T20, os erros do `write_to_crm` gravados na auditoria devem passar pela mesma regra de dados pessoais.

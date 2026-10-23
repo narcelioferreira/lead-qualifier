@@ -12,9 +12,9 @@ from tenacity import wait_none
 
 from app.schemas import Tier
 from tools_mcp.base import ToolRequestError, ToolUnavailableError
+from tools_mcp.hubspot_http import HUBSPOT_URL
 from tools_mcp.hubspot_schema import (
     GROUP_NAME,
-    HUBSPOT_URL,
     OBJECT_TYPES,
     PROPERTIES,
     Action,
@@ -103,7 +103,15 @@ def test_propriedades_da_arquitetura() -> None:
         "ai_run_id",
         "ai_prompt_version",
         "ai_qualified_at",
+        "ai_company_domain",
     }
+
+
+def test_chave_do_upsert_e_unica_e_so_em_companies() -> None:
+    key = next(p for p in PROPERTIES if p.name == "ai_company_domain")
+    assert key.unique and key.object_types == ("companies",)
+    assert key.payload()["hasUniqueValue"] is True
+    assert not any(p.unique for p in PROPERTIES if p.name != "ai_company_domain")
 
 
 def test_opcoes_do_tier_vem_do_enum() -> None:
@@ -139,10 +147,13 @@ async def test_primeira_execucao_cria_tudo_e_segunda_nao_muda_nada() -> None:
         writes_first = len(fake.writes)
         second = await _schema().sync()
 
-    per_object = len(PROPERTIES) + 1  # propriedades + grupo
-    assert _actions(first) == {Action.CREATED: per_object * len(OBJECT_TYPES)}
-    assert writes_first == per_object * len(OBJECT_TYPES)
-    assert _actions(second) == {Action.UNCHANGED: per_object * len(OBJECT_TYPES)}
+    # grupo + propriedades de cada objeto (a chave do upsert só existe em companies)
+    total = sum(1 + sum(obj in p.object_types for p in PROPERTIES) for obj in OBJECT_TYPES)
+    assert total == 17
+    assert _actions(first) == {Action.CREATED: total}
+    assert writes_first == total
+    assert _actions(second) == {Action.UNCHANGED: total}
+    assert "ai_company_domain" not in fake.props["contacts"]
     assert len(fake.writes) == writes_first  # a segunda execução não escreve
     for obj in OBJECT_TYPES:
         assert [g["name"] for g in fake.groups[obj]] == [GROUP_NAME]
@@ -164,7 +175,8 @@ async def test_divergencia_vira_patch_so_dos_campos_editaveis() -> None:
         ("companies", "ai_fit_tier", ("label", "options"))
     ]
     assert fake.writes == [("PATCH", "/crm/v3/properties/companies/ai_fit_tier")]
-    assert not {"name", "type"} & fake.bodies[-1].keys()  # o PATCH não reenvia nome nem tipo
+    # o PATCH não reenvia campos imutáveis
+    assert not {"name", "type", "hasUniqueValue"} & fake.bodies[-1].keys()
     assert fake.props["companies"]["ai_fit_tier"]["label"] == "AI · Tier de fit"
 
 
@@ -182,6 +194,15 @@ async def test_tipo_diferente_e_recusado_sem_escrever() -> None:
     with _route(fake), pytest.raises(ToolRequestError, match="tipo existente"):
         await _schema().sync(object_types=["companies"])
     assert ("PATCH", "/crm/v3/properties/companies/ai_fit_score") not in fake.writes
+
+
+async def test_unicidade_diferente_e_recusada() -> None:
+    fake = FakeHubSpot()
+    with _route(fake):
+        await _schema().sync()
+        fake.props["companies"]["ai_company_domain"]["hasUniqueValue"] = False
+        with pytest.raises(ToolRequestError, match="hasUniqueValue"):
+            await _schema().sync(object_types=["companies"])
 
 
 async def test_propriedade_nativa_com_prefixo_nao_e_alterada() -> None:
@@ -230,7 +251,7 @@ async def test_429_seguido_de_sucesso() -> None:
     with respx.mock(base_url=HUBSPOT_URL) as router:
         router.route().mock(side_effect=flaky)
         changes = await _schema().sync(object_types=["companies"])
-    assert len(changes) == len(PROPERTIES) + 1
+    assert len(changes) == len(PROPERTIES) + 1  # todas as propriedades valem para companies
 
 
 @respx.mock(base_url=HUBSPOT_URL)

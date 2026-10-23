@@ -171,8 +171,10 @@ Autenticação por header `X-API-Key`. Documentação OpenAPI automática.
 ---
 
 ## 8. Integração HubSpot
-- Conta de teste de desenvolvedor e Private App com escopos mínimos (contacts, companies, notes).
-- `scripts/setup_hubspot.py` cria as propriedades `ai_fit_tier`, `ai_fit_score`, `ai_confidence`, `ai_next_step`, `ai_run_id`, `ai_prompt_version` e `ai_qualified_at`.
+- Conta de teste de desenvolvedor e **chave de serviço** (Private Apps não existem mais em contas novas) com escopos mínimos: `crm.schemas.*` (setup) e `crm.objects.companies/contacts.read/write`, sem exclusão.
+- `scripts/setup_hubspot.py` cria, de forma idempotente, o grupo "Qualificação por IA" e as propriedades `ai_fit_tier`, `ai_fit_score`, `ai_confidence`, `ai_next_step`, `ai_run_id`, `ai_prompt_version` e `ai_qualified_at` (empresa e contato), mais `ai_company_domain` (só empresa, valor único).
+- Upsert sem duplicar: contato por `email` e empresa por busca de `domain` e, sem resultado, por `ai_company_domain` (a busca do HubSpot demora alguns segundos para indexar).
+- A criação automática de empresas a partir do e-mail do contato deve ficar desligada na conta, para que só o agente crie empresas.
 - A Note traz a justificativa por critério, as fontes e um link para `GET /v1/runs/{id}`.
 - Rate limit tratado com backoff (`tenacity`).
 

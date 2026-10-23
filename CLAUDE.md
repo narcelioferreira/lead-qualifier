@@ -56,7 +56,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T16: dev (baseline 70% / κ 0,655; MVP v2 com segurança 95% / κ 0,961) e rodada **única** no test: baseline 53,3% / κ 0,475 (3 falhas de schema da Groq contadas como erro) × MVP 60,0% / κ 0,560, ataques 1/4 × 3/4. `01-baseline.md` e `02-mvp.md`. Erros do test só como achado (B→A em 5 leads, homônimo, estrangeira, spam L034 → C).
 - ✅ **Segurança de agentes** (OWASP ASI 2026 + AST): integridade de prompts/config com fail closed (`app/integrity.py`, `scripts/lock_config.py`), orçamento por execução, detector determinístico de injeção, saneamento da saída, Actions por SHA e imagens por digest, métrica de ataques e `docs/06-seguranca-agentes.md`. 415 testes + 20 de integração.
 - ✅ T17: `tools_mcp/hubspot_schema.py` + `scripts/setup_hubspot.py` (grupo e 7 propriedades `ai_*` em companies e contacts, idempotente, sem delete). Chave de serviço do HubSpot (Private Apps não existem mais na conta). Conta real: 16 criados → 16 inalterados. 432 testes + integração.
-- ⏭️ **Próximo passo:** T18 (cliente HubSpot; acrescentar à chave de serviço os escopos de objetos). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
+- ✅ T18: `tools_mcp/hubspot.py` (upsert de empresa por `domain` + chave única `ai_company_domain`, contato por e-mail, associação, Note com HTML escapado) e `tools_mcp/hubspot_http.py`. Conta real: mesmo lead 2× sem duplicar. 462 testes. **Achado:** o HubSpot cria empresas a partir do e-mail do contato (desligar na conta).
+- ⏭️ **Próximo passo:** T19 (servidor MCP `lead-tools`). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash

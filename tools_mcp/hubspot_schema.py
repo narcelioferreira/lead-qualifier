@@ -6,7 +6,8 @@ e só cria o que falta ou corrige o que divergiu: rodar duas vezes não duplica 
 Controles (OWASP ASI02/ASI03):
 - só toca propriedades e grupo com prefixo `ai_`, criados por este módulo; nunca apaga nada;
 - mudança de `type` em propriedade existente é recusada (poderia corromper valores gravados);
-- base URL fixa (sem SSRF) e token em `SecretStr`, fora de `repr`, logs e erros;
+- base URL fixa (sem SSRF) e token em `SecretStr`, fora de `repr`, logs e erros
+  (`tools_mcp/hubspot_http.py`);
 - `dry_run` mostra o plano sem nenhuma escrita.
 """
 
@@ -20,15 +21,14 @@ from tenacity.wait import wait_base
 
 from app import retry
 from app.schemas import Tier
-from tools_mcp.base import ToolRequestError, ToolUnavailableError
+from tools_mcp.base import ToolRequestError
+from tools_mcp.hubspot_http import DEFAULT_TIMEOUT, HubSpotHttp
 
-HUBSPOT_URL = "https://api.hubapi.com"
 PREFIX = "ai_"
 GROUP_NAME = "ai_qualification"
 GROUP_LABEL = "Qualificação por IA"
 # Empresa: o fit ao ICP é da empresa. Contato: o vendedor trabalha a partir do contato.
 OBJECT_TYPES: tuple[str, ...] = ("companies", "contacts")
-DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 
 PropertyType = Literal["enumeration", "number", "string", "datetime"]
 FieldType = Literal["select", "number", "text", "textarea", "date"]
@@ -53,6 +53,9 @@ class PropertySpec(BaseModel):
     field_type: FieldType
     description: str = Field(max_length=500)
     options: tuple[PropertyOption, ...] = ()
+    # `hasUniqueValue` só pode ser definido na criação; serve de chave para upsert atômico.
+    unique: bool = False
+    object_types: tuple[str, ...] = OBJECT_TYPES
 
     @model_validator(mode="after")
     def _options_only_for_enumeration(self) -> "PropertySpec":
@@ -69,6 +72,7 @@ class PropertySpec(BaseModel):
             "groupName": GROUP_NAME,
             "description": self.description,
             "formField": False,
+            "hasUniqueValue": self.unique,
             "options": [
                 {"label": o.label, "value": o.value, "displayOrder": o.display_order}
                 for o in self.options
@@ -130,6 +134,15 @@ PROPERTIES: tuple[PropertySpec, ...] = (
         field_type="date",
         description="Data e hora da qualificação.",
     ),
+    PropertySpec(
+        name="ai_company_domain",
+        label="AI · Domínio (chave)",
+        type="string",
+        field_type="text",
+        description="Domínio normalizado, único: chave do upsert da empresa pelo agente (T18).",
+        unique=True,
+        object_types=("companies",),
+    ),
 )
 
 
@@ -155,6 +168,11 @@ def diff_fields(spec: PropertySpec, current: dict[str, Any]) -> tuple[str, ...]:
             f"{spec.name}: tipo existente {current.get('type')!r} difere de {spec.type!r}; "
             "corrija manualmente no HubSpot (o script não troca tipo para não corromper dados)"
         )
+    if bool(current.get("hasUniqueValue")) != spec.unique:
+        raise ToolRequestError(
+            f"{spec.name}: hasUniqueValue existente difere de {spec.unique}; o HubSpot só "
+            "permite defini-lo na criação (corrija manualmente)"
+        )
     if current.get("hubspotDefined"):
         raise ToolRequestError(f"{spec.name}: propriedade nativa do HubSpot, não será alterada")
     wanted = spec.payload()
@@ -170,6 +188,9 @@ def diff_fields(spec: PropertySpec, current: dict[str, Any]) -> tuple[str, ...]:
     return tuple(changed)
 
 
+_ARCHIVED = "propriedade arquivada? restaure-a na interface do HubSpot e rode de novo"
+
+
 class HubSpotSchema:
     """Cliente mínimo da API de propriedades v3 (só leitura, criação e atualização)."""
 
@@ -181,10 +202,9 @@ class HubSpotSchema:
         retry_wait: wait_base | None = None,
         retry_sleep: retry.Sleep | None = None,
     ) -> None:
-        self._token = token
-        self._timeout = timeout
-        self._retry_wait = retry_wait
-        self._retry_sleep = retry_sleep
+        self._http = HubSpotHttp(
+            token, timeout=timeout, retry_wait=retry_wait, retry_sleep=retry_sleep
+        )
 
     def __repr__(self) -> str:
         return "HubSpotSchema()"
@@ -196,15 +216,14 @@ class HubSpotSchema:
         *,
         dry_run: bool = False,
     ) -> list[Change]:
-        headers = {"Authorization": f"Bearer {self._token.get_secret_value()}"}
         changes: list[Change] = []
-        async with httpx.AsyncClient(
-            base_url=HUBSPOT_URL, timeout=self._timeout, headers=headers
-        ) as client:
+        async with self._http.client() as client:
             for object_type in object_types:
                 changes.append(await self._sync_group(client, object_type, dry_run))
                 current = await self._list_properties(client, object_type)
                 for spec in specs:
+                    if object_type not in spec.object_types:
+                        continue
                     changes.append(
                         await self._sync_property(
                             client, object_type, spec, current.get(spec.name), dry_run
@@ -216,17 +235,17 @@ class HubSpotSchema:
         self, client: httpx.AsyncClient, object_type: str, dry_run: bool
     ) -> Change:
         path = f"/crm/v3/properties/{object_type}/groups"
-        groups = (await self._send(client, "GET", path)).get("results") or []
+        groups = (await self._http.send(client, "GET", path)).get("results") or []
         if any(g.get("name") == GROUP_NAME for g in groups):
             return Change(object_type=object_type, name=GROUP_NAME, action=Action.UNCHANGED)
         if not dry_run:
-            await self._send(client, "POST", path, {"name": GROUP_NAME, "label": GROUP_LABEL})
+            await self._http.send(client, "POST", path, {"name": GROUP_NAME, "label": GROUP_LABEL})
         return Change(object_type=object_type, name=GROUP_NAME, action=Action.CREATED)
 
     async def _list_properties(
         self, client: httpx.AsyncClient, object_type: str
     ) -> dict[str, dict[str, Any]]:
-        body = await self._send(client, "GET", f"/crm/v3/properties/{object_type}")
+        body = await self._http.send(client, "GET", f"/crm/v3/properties/{object_type}")
         return {
             p["name"]: p
             for p in body.get("results") or []
@@ -244,47 +263,14 @@ class HubSpotSchema:
         path = f"/crm/v3/properties/{object_type}"
         if current is None:
             if not dry_run:
-                await self._send(client, "POST", path, spec.payload())
+                await self._http.send(client, "POST", path, spec.payload(), conflict_hint=_ARCHIVED)
             return Change(object_type=object_type, name=spec.name, action=Action.CREATED)
         fields = diff_fields(spec, current)
         if not fields:
             return Change(object_type=object_type, name=spec.name, action=Action.UNCHANGED)
         if not dry_run:
-            # `name` e `type` ficam de fora: o PATCH só envia campos editáveis.
-            patch = {k: v for k, v in spec.payload().items() if k not in {"name", "type"}}
-            await self._send(client, "PATCH", f"{path}/{spec.name}", patch)
+            # `name`, `type` e `hasUniqueValue` ficam de fora: o PATCH só envia campos editáveis.
+            immutable = {"name", "type", "hasUniqueValue"}
+            patch = {k: v for k, v in spec.payload().items() if k not in immutable}
+            await self._http.send(client, "PATCH", f"{path}/{spec.name}", patch)
         return Change(object_type=object_type, name=spec.name, action=Action.UPDATED, fields=fields)
-
-    async def _send(
-        self,
-        client: httpx.AsyncClient,
-        method: str,
-        path: str,
-        body: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        try:
-            response, _ = await retry.send_with_retry(
-                lambda: client.request(method, path, json=body),
-                "hubspot",
-                self._retry_wait,
-                self._retry_sleep,
-            )
-        except retry.UpstreamUnavailableError as exc:
-            raise ToolUnavailableError(str(exc)) from exc
-        except retry.UpstreamRequestError as exc:
-            if exc.status == 401:
-                raise ToolRequestError(
-                    "hubspot: token inválido ou expirado (HTTP 401); use uma chave de serviço"
-                ) from exc
-            if exc.status == 403:
-                raise ToolRequestError(
-                    "hubspot: token sem os escopos crm.schemas.*.write (HTTP 403)"
-                ) from exc
-            if exc.status == 409:
-                raise ToolRequestError(
-                    f"hubspot: conflito em {path} (propriedade arquivada? restaure-a "
-                    "na interface do HubSpot e rode de novo)"
-                ) from exc
-            raise ToolRequestError(str(exc)) from exc
-        data: Any = response.json() if response.content else {}
-        return data if isinstance(data, dict) else {}
