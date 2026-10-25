@@ -1,4 +1,5 @@
-"""Tabelas do Postgres: auditoria (`agent_runs`, `agent_steps`) e cache das ferramentas.
+"""Tabelas do Postgres: auditoria (`agent_runs`, `agent_steps`), cache das ferramentas e
+chunks da base de conhecimento (`kb_chunks`, RAG).
 
 O schema do banco é definido pelas migrations do Alembic (`migrations/`). Estes modelos são a
 fonte para o autogenerate, e o teste de integração garante que os dois não divergem.
@@ -22,8 +23,10 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from app.audit.vector import Vector
 
 # Nomes previsíveis para constraints: migrations reproduzíveis e downgrade sem adivinhação.
 NAMING = {
@@ -37,6 +40,10 @@ NAMING = {
 RUN_STATUSES = ("running", "completed", "failed", "needs_review", "rejected")
 TIERS = ("A", "B", "C", "D")
 Money = Numeric(14, 8)
+KB_DOC_TYPES = ("playbook", "case", "objection", "product")
+# Dimensão do `nomic-embed-text:v1.5` (catálogo `ollama-embedding`). Trocar o modelo de
+# embeddings exige migration nova e reingestão.
+EMBEDDING_DIM = 768
 
 
 class Base(DeclarativeBase):
@@ -128,3 +135,35 @@ class ToolCacheEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_tool_cache_tool", "tool"),)
+
+
+class KBChunkRow(Base):
+    """Uma seção de um documento da base de conhecimento, com o embedding (T24).
+
+    Só a ingestão (`scripts/ingest_kb.py`) escreve aqui, e só documentos que passaram pela
+    validação de `app.knowledge_base` (ASI06). Os hashes permitem reingestão idempotente e
+    rastrear de qual versão do documento veio cada chunk citado.
+    """
+
+    __tablename__ = "kb_chunks"
+
+    chunk_id: Mapped[str] = mapped_column(String(80), primary_key=True)  # "<doc_id>#<nn>"
+    doc_id: Mapped[str] = mapped_column(String(64))
+    doc_type: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(120))
+    section: Mapped[str] = mapped_column(String(200))
+    # Listas vazias = vale para todos (mesma regra do front-matter).
+    tiers: Mapped[list[str]] = mapped_column(ARRAY(String(1)))
+    segments: Mapped[list[str]] = mapped_column(ARRAY(String(30)))
+    sectors: Mapped[list[str]] = mapped_column(ARRAY(String(20)))
+    content: Mapped[str] = mapped_column(Text)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    doc_sha256: Mapped[str] = mapped_column(String(64))
+    embedding_model: Mapped[str] = mapped_column(String(80))
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(f"doc_type IN {KB_DOC_TYPES}", name="doc_type"),
+        Index("ix_kb_chunks_doc_id", "doc_id"),
+    )

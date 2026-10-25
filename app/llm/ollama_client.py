@@ -1,7 +1,9 @@
-"""Cliente do Ollama (SLM local) com structured output via `format` = JSON Schema."""
+"""Cliente do Ollama: SLM local com structured output (`format` = JSON Schema) e embeddings."""
 
+import math
 import time
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -11,6 +13,7 @@ from tenacity.wait import wait_base
 from app.llm.base import (
     DEFAULT_TIMEOUT,
     LLMOutputError,
+    LLMRequestError,
     LLMResult,
     Message,
     check_chat,
@@ -21,6 +24,17 @@ from app.llm.base import (
 from app.routing.cost import ModelSpec, Usage, cost_usd
 
 PROVIDER = "ollama"
+# Limite por chamada de embeddings: a ingestão manda os chunks em lotes.
+MAX_EMBED_INPUTS = 64
+
+
+@dataclass(frozen=True)
+class Embeddings:
+    vectors: list[list[float]]
+    usage: Usage
+    model_key: str
+    model: str
+    latency_ms: float
 
 
 class OllamaClient:
@@ -86,4 +100,44 @@ class OllamaClient:
             latency_ms=latency_ms,
             cost_usd=cost_usd(usage, spec),
             attempts=attempts,
+        )
+
+    async def embed(self, spec: ModelSpec, texts: Sequence[str]) -> Embeddings:
+        """Um vetor por texto, na mesma ordem. A resposta é validada: quantidade, dimensão
+        igual entre os vetores e só números finitos (um vetor ruim no pgvector estragaria a
+        busca em silêncio)."""
+        if spec.provider != PROVIDER or spec.kind != "embedding":
+            raise LLMRequestError(f"{spec.key} não é um modelo de embeddings do {PROVIDER}")
+        if not 1 <= len(texts) <= MAX_EMBED_INPUTS:
+            raise LLMRequestError(f"embeddings: de 1 a {MAX_EMBED_INPUTS} textos por chamada")
+        body = {"model": spec.model, "input": list(texts), "truncate": True}
+        start = time.perf_counter()
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response, _ = await send_with_retry(
+                lambda: client.post(f"{self._base_url}/api/embed", json=body),
+                PROVIDER,
+                self._retry_wait,
+                self._retry_sleep,
+            )
+        latency_ms = (time.perf_counter() - start) * 1000
+
+        data = response.json()
+        vectors = data.get("embeddings")
+        if not isinstance(vectors, list) or len(vectors) != len(texts):
+            raise LLMOutputError(f"{PROVIDER}: quantidade de embeddings diferente da pedida")
+        dims = {len(v) if isinstance(v, list) else -1 for v in vectors}
+        if len(dims) != 1 or dims == {-1} or dims == {0}:
+            raise LLMOutputError(f"{PROVIDER}: embeddings com dimensões inválidas")
+        if not all(
+            isinstance(x, int | float) and not isinstance(x, bool) and math.isfinite(x)
+            for v in vectors
+            for x in v
+        ):
+            raise LLMOutputError(f"{PROVIDER}: embeddings com valores não numéricos")
+        return Embeddings(
+            vectors=[[float(x) for x in v] for v in vectors],
+            usage=Usage(input_tokens=data.get("prompt_eval_count", 0)),
+            model_key=spec.key,
+            model=str(data.get("model") or spec.model),
+            latency_ms=latency_ms,
         )

@@ -90,7 +90,7 @@ def test_errors_are_truncated() -> None:
 
 def test_metadata_has_audit_tables_with_named_constraints() -> None:
     tables = Base.metadata.tables
-    assert set(tables) == {"agent_runs", "agent_steps", "tool_cache"}
+    assert set(tables) == {"agent_runs", "agent_steps", "tool_cache", "kb_chunks"}
     names = {c.name for c in tables["agent_runs"].constraints}
     assert {"pk_agent_runs", "ck_agent_runs_status", "ck_agent_runs_tier"} <= names
 
@@ -98,7 +98,7 @@ def test_metadata_has_audit_tables_with_named_constraints() -> None:
 def test_migrations_have_single_head() -> None:
     config = Config(str(ROOT / "alembic.ini"))
     heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == ["0003"]
+    assert heads == ["0004"]
 
 
 def test_alembic_ini_has_no_database_url() -> None:

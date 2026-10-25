@@ -132,7 +132,8 @@ Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e cu
 ## 5. RAG Agêntico
 - **Base interna** (`knowledge_base/`, de 15 a 30 documentos fictícios em Markdown): playbook por tier, cases por setor, objeções e respostas, descrição do produto.
 - **Ingestão:** `scripts/ingest_kb.py`, com chunking por seção, embeddings locais no Ollama (`nomic-embed-text:v1.5`; a Groq não oferece embeddings), armazenamento no pgvector e metadados `{doc_type, sector, tier}`.
-- **Recuperação:** busca híbrida (vetorial + filtro por metadado de setor e tier) e top-k com citação.
+- **Recuperação:** busca híbrida (vetorial + filtro por metadado de tipo, tier, setor e segmento) e top-k com citação, com um resultado por documento. A busca é exata (sem índice ANN): com ~100 chunks ela é instantânea e tem recall de 100%; um HNSW só compensa com dezenas de milhares de chunks.
+- **Setor dos documentos:** cada documento declara o segmento (`transporte_cargas`, `distribuicao`...), e o `SectorFit` do filtro sai do CNAE do segmento pela mesma taxonomia que classifica o lead (T23).
 - **Comportamento agêntico:** no `agentic_research`, o agente escolhe a fonte (web, site da empresa ou base interna) e avalia a suficiência da evidência. No `suggest_next_step`, recupera o playbook e os cases filtrados pelo setor da ontologia.
 - Nenhum lead do conjunto de teste entra na base, para evitar vazamento na avaliação.
 
@@ -145,7 +146,7 @@ Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e cu
 |---|---|
 | `search_company_web(query)` | Tavily, com cache em Postgres |
 | `fetch_company_site(domain)` | Home e página "sobre", extraídas com `trafilatura` e truncadas |
-| `search_knowledge_base(query, filters)` | Busca no pgvector |
+| `search_knowledge_base(query, filters, k)` | Busca no pgvector (só leitura, interna) |
 | `hubspot_upsert_company(company)` | Upsert da empresa (nome, domínio e `ai_*`, validados pela allowlist) |
 | `hubspot_upsert_contact(contact)` | Upsert do contato (e-mail, cargo e `ai_*`) |
 | `hubspot_associate(contact_id, company_id)` | Associa contato e empresa |

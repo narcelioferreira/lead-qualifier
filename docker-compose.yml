@@ -50,11 +50,15 @@ services:
       HUBSPOT_TOKEN: ${HUBSPOT_TOKEN:-}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lead}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-lead_qualifier}
       TOOLS_MCP_ALLOWED_HOSTS: 127.0.0.1:*,localhost:*,tools-mcp:*
+      # Embeddings da consulta na base de conhecimento (T24).
+      OLLAMA_BASE_URL: http://ollama:11434
     ports:
       - "127.0.0.1:${TOOLS_MCP_PORT:-8001}:8001"
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_started
     read_only: true
     cap_drop: [ALL]
     # Sem `no-new-privileges`: no Docker do snap ele impede o exec do Python. A imagem não tem

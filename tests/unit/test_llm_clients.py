@@ -330,3 +330,49 @@ def test_strict_schema_flattens_optional_fields_without_anyof() -> None:
            "company_kind": "unknown", "area": "other", "seniority": "unknown",
            "role_certainty": "low", "intents": [], "flags": [], "evidence_ids": []}
     )  # fmt: skip
+
+
+# --- Ollama: embeddings ------------------------------------------------------------------
+
+
+@respx.mock
+async def test_ollama_embed_returns_vectors_and_usage() -> None:
+    route = respx.post(f"{OLLAMA_URL}/api/embed").respond(
+        json={"embeddings": [[0.1, 0.2], [0.3, 0.4]], "prompt_eval_count": 7}
+    )
+    result = await _ollama().embed(get_catalog().get("ollama-embedding"), ["a", "b"])
+    assert result.vectors == [[0.1, 0.2], [0.3, 0.4]]
+    assert result.usage.input_tokens == 7 and result.model_key == "ollama-embedding"
+    body = json.loads(route.calls.last.request.content)
+    assert body == {"model": "nomic-embed-text:v1.5", "input": ["a", "b"], "truncate": True}
+
+
+@pytest.mark.parametrize(
+    "embeddings",
+    [
+        None,
+        [[0.1, 0.2]],  # um vetor a menos
+        [[0.1, 0.2], [0.3]],  # dimensões diferentes
+        [[], []],
+        [[0.1, "x"], [0.3, 0.4]],
+        [[0.1, True], [0.3, 0.4]],
+        [[0.1, float("nan")], [0.3, 0.4]],
+        [{"a": 1}, {"b": 2}],
+    ],
+)
+@respx.mock
+async def test_ollama_embed_rejects_invalid_output(embeddings: Any) -> None:
+    respx.post(f"{OLLAMA_URL}/api/embed").respond(
+        content=json.dumps({"embeddings": embeddings}, allow_nan=True).encode(),
+        headers={"content-type": "application/json"},
+    )
+    with pytest.raises(LLMOutputError):
+        await _ollama().embed(get_catalog().get("ollama-embedding"), ["a", "b"])
+
+
+async def test_ollama_embed_rejects_chat_model_and_bad_batch() -> None:
+    catalog = get_catalog()
+    with pytest.raises(LLMRequestError, match="embeddings"):
+        await _ollama().embed(catalog.get("ollama-slm"), ["a"])
+    with pytest.raises(LLMRequestError, match="textos por chamada"):
+        await _ollama().embed(catalog.get("ollama-embedding"), [])

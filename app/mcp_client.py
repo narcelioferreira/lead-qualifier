@@ -21,6 +21,7 @@ from pydantic import BaseModel, SecretStr, ValidationError
 
 from tools_mcp.base import ToolRequestError, ToolUnavailableError
 from tools_mcp.hubspot import CompanyProps, ContactProps, UpsertResult
+from tools_mcp.kb import DEFAULT_K, KBFilters, KBSearchResult
 from tools_mcp.search import SearchResult
 from tools_mcp.site import SiteContent
 
@@ -67,6 +68,14 @@ class LeadTools:
 
     async def fetch(self, domain: str) -> SiteContent:
         return await self._call("fetch_company_site", {"domain": domain}, SiteContent)
+
+    async def search_knowledge_base(
+        self, query: str, filters: KBFilters | None = None, k: int = DEFAULT_K
+    ) -> KBSearchResult:
+        args: dict[str, Any] = {"query": query, "k": k}
+        if filters is not None:
+            args["filters"] = filters.model_dump(mode="json", exclude_none=True)
+        return await self._call("search_knowledge_base", args, KBSearchResult)
 
     async def upsert_company(self, company: CompanyProps) -> UpsertResult:
         args = {"company": company.model_dump(mode="json", exclude_none=True)}

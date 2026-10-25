@@ -11,12 +11,15 @@ from mcp.client.client import Client
 from pydantic import SecretStr, ValidationError
 from tenacity import wait_none
 
+from app.knowledge_base import load_knowledge_base
+from tests.unit.test_kb_index import FakeEmbedder
 from tools_mcp.base import MemoryCache, ToolRequestError
 from tools_mcp.config import ToolsSettings
 from tools_mcp.hubspot import HubSpotClient
 from tools_mcp.hubspot_http import HUBSPOT_URL
+from tools_mcp.kb import KnowledgeBaseSearch, MemoryKBStore, ingest
 from tools_mcp.search import TAVILY_URL, TavilySearch
-from tools_mcp.server import MCP_PATH, ToolDeps, build_app, build_server
+from tools_mcp.server import MCP_PATH, ToolDeps, build_app, build_server, production_deps
 from tools_mcp.site import SiteFetcher
 
 pytestmark = pytest.mark.anyio
@@ -34,7 +37,9 @@ TOOLS = {
     "hubspot_upsert_contact",
     "hubspot_associate",
     "hubspot_create_note",
+    "search_knowledge_base",
 }
+READ_TOOLS = {"search_company_web", "fetch_company_site", "search_knowledge_base"}
 
 
 @pytest.fixture
@@ -67,9 +72,11 @@ async def test_lista_as_tools_com_anotacoes() -> None:
     async with Client(build_server(_deps())) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     assert set(tools) == TOOLS
-    for name in ("search_company_web", "fetch_company_site"):
+    for name in READ_TOOLS:
         assert tools[name].annotations.read_only_hint is True
-    for name in TOOLS - {"search_company_web", "fetch_company_site"}:
+    # A base de conhecimento é interna: sem mundo aberto (web, sites de terceiros).
+    assert tools["search_knowledge_base"].annotations.open_world_hint is False
+    for name in TOOLS - READ_TOOLS:
         annotations = tools[name].annotations
         assert annotations.read_only_hint is False
         assert annotations.destructive_hint is False  # nenhuma tool apaga
@@ -325,3 +332,55 @@ def test_servidor_nao_sobe_sem_token_forte() -> None:
 def test_allowed_hosts_parse() -> None:
     settings = _settings(tools_mcp_allowed_hosts=" 127.0.0.1:*, tools-mcp:8001 ,")
     assert settings.allowed_hosts() == ["127.0.0.1:*", "tools-mcp:8001"]
+
+
+# --- base de conhecimento ----------------------------------------------------------------
+
+
+async def _kb_deps() -> ToolDeps:
+    store, embedder = MemoryKBStore(), FakeEmbedder()
+    await ingest(load_knowledge_base(), embedder, store)
+    return _deps(kb=KnowledgeBaseSearch(embedder, store))
+
+
+async def test_search_knowledge_base_com_filtro() -> None:
+    args = {"query": "como abordar o lead", "filters": {"doc_types": ["playbook"], "tier": "A"}}
+    result = await _call("search_knowledge_base", args, await _kb_deps())
+    assert not result.is_error
+    hits = result.structured_content["results"]
+    assert [h["doc_id"] for h in hits] == ["playbook-tier-a"]
+    assert hits[0]["chunk_id"].startswith("playbook-tier-a#")
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        ({"query": "preço", "k": 0}, "k deve estar"),
+        ({"query": "preço", "k": 9}, "k deve estar"),
+        ({"query": "preço", "filters": {"tier": "A", "score": 100}}, "score"),
+        ({"query": "preço", "filters": {"tier": "Z"}}, "tier"),
+        ({"query": "ab"}, "consulta"),
+        ({"query": "preço", "top_k": 50}, "argumentos desconhecidos"),
+    ],
+)
+async def test_search_knowledge_base_recusa_argumentos_invalidos(
+    args: dict[str, Any], message: str
+) -> None:
+    result = await _call("search_knowledge_base", args, await _kb_deps())
+    assert result.is_error and message in _text(result)
+
+
+async def test_base_de_conhecimento_ausente_responde_erro() -> None:
+    result = await _call("search_knowledge_base", {"query": "preço"})
+    assert result.is_error and "Base de conhecimento não configurado" in _text(result)
+
+
+async def test_production_deps_liga_a_base_so_com_ollama() -> None:
+    # O engine é preguiçoso: nada conecta ao banco neste teste.
+    dsn = "postgresql+psycopg://u:p@db.invalid/x"  # pragma: allowlist secret
+    async with production_deps(_settings(database_url=dsn)) as deps:
+        assert deps.kb is None
+    async with production_deps(
+        _settings(database_url=dsn, ollama_base_url="http://ollama:11434")
+    ) as deps:
+        assert isinstance(deps.kb, KnowledgeBaseSearch)

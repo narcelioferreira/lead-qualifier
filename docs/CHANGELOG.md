@@ -666,3 +666,39 @@
   - duas das minhas mutações (link e e-mail) só renomeavam o rótulo do padrão, que continuava ativo, e por isso sobreviviam. Refeitas com o padrão desligado, as duas derrubam testes.
 - **Documentação:** README (status da Fase F, controles já entregues que ainda apareciam como planejados, FastAPI na stack, estrutura e contagem de testes) e `06-seguranca-agentes.md` (ASI06).
 - **Limitações:** a base ainda não entra no `integrity.lock.json`. Na T24, a ingestão só aceita documentos que passam por `load_knowledge_base()` e grava o hash de cada documento junto dos chunks.
+
+## T24: Ingestão e busca na base de conhecimento
+- **Embeddings:** `OllamaClient.embed` (`/api/embed`, lotes de até 64 textos) com o `nomic-embed-text:v1.5` do catálogo (`ollama-embedding`, já presente no `models.yaml`). A resposta é validada (quantidade igual à pedida, mesma dimensão em todos os vetores, só números finitos), porque um vetor ruim no pgvector estragaria a busca sem nenhum erro. O `OllamaEmbedder` aplica os prefixos de tarefa recomendados pelo modelo (`search_query:` e `search_document:`).
+- **Chunking:** `chunk_document` em `app/knowledge_base.py`, um chunk por seção `## `, com o título do documento e o da seção no início do texto. São 96 chunks, de 111 a 650 caracteres, então cada chunk cabe inteiro no snippet da busca.
+- **Tabela `kb_chunks`** (migration 0004): metadados (`doc_type`, `tiers`, `segments`, `sectors`), texto, `content_sha256`, `doc_sha256`, modelo e `embedding vector(768)`.
+  - **Decisão:** em vez de adicionar o pacote `pgvector`, o tipo `vector` ficou em `app/audit/vector.py`, com cerca de 40 linhas e uma dependência a menos (ASI04). Ele confere a dimensão e os números finitos antes de enviar e é registrado na reflexão, então o teste que compara modelos e migrations continua valendo.
+  - **Decisão:** sem índice ANN. Com ~100 chunks, a busca exata por cosseno é instantânea e tem recall de 100%; um HNSW só compensa com dezenas de milhares de chunks.
+- **`tools_mcp/kb.py`:**
+  - `ingest()` é **idempotente**: um chunk só é recalculado se o texto, o documento ou o modelo de embeddings mudarem, e os chunks de seções ou documentos removidos são apagados;
+  - `KnowledgeBaseSearch` aplica o filtro de metadado (tipo, tier, setor da ontologia, segmento; documento sem tier ou segmento vale para todos), ordena por similaridade de cosseno e devolve **um resultado por documento**, com o melhor trecho, para o top-k cobrir documentos diferentes;
+  - índices `PostgresKBStore` e `MemoryKBStore`, este para os testes, com a mesma semântica de filtro.
+- **Tool MCP `search_knowledge_base(query, filters, k)`** no `lead-tools` (agora com 7 tools): só leitura, `openWorldHint=False` (base interna), filtros com `extra="forbid"` e `k` de 1 a 8. O `LeadTools` ganhou o método `search_knowledge_base`. No compose, o `tools-mcp` recebe `OLLAMA_BASE_URL` e depende do `ollama`; sem a URL, a tool responde "não configurado".
+- **`scripts/ingest_kb.py`:** valida a base inteira antes de escrever (fail closed) e imprime o resumo. Execução real no banco de desenvolvimento, depois da migration 0004: na 1ª vez, 96 inseridos; na 2ª, 96 inalterados.
+- **Avaliação (`evals/kb_eval.py` + `evals/kb_questions.jsonl`):** 10 perguntas, cada uma com o documento esperado e o filtro que o agente usaria, cobrindo os 4 tipos de documento. Relatório em `evals/reports/kb-retrieval.md`.
+
+  | Modo | Hit rate@3 | MRR |
+  |---|---:|---:|
+  | com filtro (como o agente vai usar) | **100%** (10/10) | 1,00 |
+  | sem filtro (só vetorial) | 100% (10/10) | 0,77 |
+
+  - Sem filtro, o documento esperado cai para a 2ª ou 3ª posição em 4 das 10 perguntas, quase sempre atrás de um vizinho próximo (o playbook B no lugar do A; uma objeção no lugar do documento de produto). O filtro de metadado é o que coloca o documento certo em 1º.
+  - **Limitação:** as perguntas foram escritas pelo mesmo autor dos documentos (o Claude) e por isso tendem a usar o vocabulário da base, o que deixa o número otimista. Elas foram escritas antes da primeira medição e não foram ajustadas depois. A medida que importa vem na T26 (LLM-as-judge do próximo passo) e na T27 (avaliação `rag`).
+- **Teste:**
+  - `test_kb_index.py` (27): chunking, ingestão idempotente, atualização e remoção, troca de modelo, quantidade de vetores errada sem gravação parcial, um resultado por documento, filtros (incluindo "case não vale para o D" e "documento sem tier vale para todos"), limites de `k` e da consulta, consistência das 10 perguntas com a base (o filtro da pergunta não pode excluir o documento esperado), embedder do Ollama (prefixos, lotes e erros), tipo `vector` e fail closed do script;
+  - `test_llm_clients.py` (+10): `embed` válido e 8 formas de saída inválida, modelo de chat recusado e lote vazio;
+  - `test_mcp_server.py` (+9) e `test_mcp_client.py` (+1): a tool pelo MCP, com anotação interna, argumentos inválidos ou desconhecidos recusados, base ausente e `production_deps` ligando a base só com o Ollama configurado;
+  - integração real (`test_kb_live.py`, 8, com Postgres descartável e Ollama): ingestão 2× sem duplicar, reingestão com documento alterado e removido, hit rate@3 ≥ 80% e **paridade** entre o SQL e o índice em memória em 6 combinações de filtro;
+  - **mutação:** 25 mutações, todas derrubando pelo menos 1 teste: 20 nos testes unitários (idempotência, apagar órfãos, contagem de vetores, cada filtro, um por documento, limite de `k`, validação da consulta, prefixo de tarefa, `extra="forbid"`, anotação interna, as 4 validações do `embed`, as 2 do tipo `vector` e o fail closed do script) e 5 no SQL, contra os serviços reais (filtro de tipo, filtros de array, lista vazia = todos, apagar órfãos e ordem por distância);
+  - `make check` (pelas ferramentas do `.venv`): 677 testes, cobertura de 94%, ruff, mypy strict, bandit, detect-secrets e pip-audit. Integração com Postgres e Ollama: 22 testes verdes (auditoria + base).
+- **Problemas corrigidos:**
+  - a checagem de `k` no servidor MCP sobreviveu à mutação, porque o `KnowledgeBaseSearch` já faz a mesma checagem. Era duplicada e foi removida do servidor;
+  - o teste de paridade levava 92 s porque reindexava o índice em memória em cada caso. Com uma fixture de módulo, caiu para 29 s;
+  - os testes que fixam a lista de tabelas e a head das migrations foram atualizados para a 0004.
+- **Segurança:** ASI06 (só a base validada é indexada, fail closed; hash do texto e do documento em cada chunk; filtros com `extra="forbid"`), ASI02 (tool só de leitura, `openWorldHint=False`, consulta validada e limitada, `k` limitado), ASI04 (sem dependência nova, `uv.lock` inalterado) e ASI03 (o Ollama só é chamado pela URL da configuração).
+- **Ambiente:** baixei o `nomic-embed-text:v1.5` no Ollama local (`/api/pull`), apliquei a migration 0004 no banco de desenvolvimento e indexei a base nele.
+- **Pendência do autor:** reconstruir o `tools-mcp` (`docker compose build --no-cache tools-mcp && docker compose up -d --force-recreate tools-mcp`), conferir que o modelo está no Ollama do compose (`docker compose exec ollama ollama list`; o Ollama em 127.0.0.1:11434 tem a mesma versão do compose, 0.40.6, então o modelo provavelmente já está no volume) e conferir pelo `list_tools` que aparecem as 7 tools.

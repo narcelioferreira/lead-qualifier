@@ -13,6 +13,7 @@ o corpo de cada documento passa por quatro verificações:
 - sem dados pessoais (e-mail, telefone, CPF ou CNPJ): a base é fictícia e vai para o LLM.
 """
 
+import hashlib
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -124,6 +125,52 @@ class KBDocument:
     metadata: KBMetadata
     body: str
     path: Path
+    # SHA-256 do arquivo inteiro: a ingestão grava junto dos chunks (rastreabilidade).
+    sha256: str = ""
+
+
+@dataclass(frozen=True)
+class KBChunk:
+    """Uma seção `## ` de um documento: a unidade que vira embedding no pgvector (T24)."""
+
+    chunk_id: str  # "<doc_id>#<nn>"
+    doc_id: str
+    section: str
+    text: str  # título do documento + título da seção + corpo (contexto para o embedding)
+    metadata: KBMetadata
+    doc_sha256: str
+
+    @property
+    def content_sha256(self) -> str:
+        return hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+
+
+def chunk_document(doc: KBDocument) -> list[KBChunk]:
+    """Divide o corpo pelas seções `## `. O `# título` sai do texto (já está no prefixo), e
+    um parágrafo antes da primeira seção entra nela."""
+    lines = [line for line in doc.body.splitlines() if not line.startswith("# ")]
+    sections: list[tuple[str, list[str]]] = []
+    preamble: list[str] = []
+    for line in lines:
+        if line.startswith("## "):
+            sections.append((line[3:].strip(), list(preamble)))
+            preamble = []
+        elif sections:
+            sections[-1][1].append(line)
+        else:
+            preamble.append(line)
+    meta = doc.metadata
+    return [
+        KBChunk(
+            chunk_id=f"{meta.doc_id}#{index:02d}",
+            doc_id=meta.doc_id,
+            section=heading,
+            text=f"{meta.title} | {heading}\n\n" + "\n".join(body).strip(),
+            metadata=meta,
+            doc_sha256=doc.sha256,
+        )
+        for index, (heading, body) in enumerate(sections, start=1)
+    ]
 
 
 def content_issues(text: str) -> list[str]:
@@ -158,7 +205,8 @@ def parse_document(text: str, path: Path) -> KBDocument:
     issues = content_issues(raw_meta + "\n" + body)
     if issues:
         raise KBError(f"{path.name}: conteúdo recusado: {', '.join(issues)}")
-    return KBDocument(metadata=metadata, body=body, path=path)
+    sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return KBDocument(metadata=metadata, body=body, path=path, sha256=sha256)
 
 
 def load_knowledge_base(directory: Path = KB_DIR) -> tuple[KBDocument, ...]:

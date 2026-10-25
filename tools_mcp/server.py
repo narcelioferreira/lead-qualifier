@@ -10,7 +10,8 @@ Controles (OWASP ASI02/ASI03):
 - argumentos validados pelos mesmos modelos Pydantic dos clientes (`extra="forbid"`);
 - erros esperados (`ToolError`) viram mensagem para o cliente; erros inesperados viram uma
   mensagem genérica, sem detalhe interno;
-- anotações honestas: pesquisa é só leitura; HubSpot escreve, mas nunca apaga;
+- anotações honestas: pesquisa é só leitura; HubSpot escreve, mas nunca apaga; a base de
+  conhecimento é só leitura e interna (sem mundo aberto);
 - escritas idempotentes: upsert pela chave única e Note por `run_id` (registro no `ledger`).
 - argumentos desconhecidos são recusados (`StrictMCPServer`): o SDK os ignoraria em silêncio, e
   um cliente de outra versão gravaria no CRM sem a garantia que pediu (ex.: `run_id`).
@@ -31,6 +32,8 @@ from pydantic import BaseModel, ConfigDict
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.audit.db import create_engine, session_factory
+from app.llm.ollama_client import OllamaClient
+from app.routing.cost import get_catalog
 from tools_mcp.base import MemoryCache, PostgresCache, ToolCache, ToolError, cache_key
 from tools_mcp.config import ToolsSettings, get_tools_settings
 from tools_mcp.hubspot import (
@@ -41,6 +44,14 @@ from tools_mcp.hubspot import (
     RunId,
     UpsertResult,
 )
+from tools_mcp.kb import (
+    DEFAULT_K,
+    KBFilters,
+    KBSearchResult,
+    KnowledgeBaseSearch,
+    OllamaEmbedder,
+    PostgresKBStore,
+)
 from tools_mcp.search import SearchResult, TavilySearch
 from tools_mcp.site import SiteContent, SiteFetcher
 
@@ -48,6 +59,7 @@ SERVER_NAME = "lead-tools"
 MCP_PATH = "/mcp"
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+INTERNAL_READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 CRM_UPSERT = ToolAnnotations(
     readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True
 )
@@ -60,6 +72,7 @@ class ToolDeps:
     site: SiteFetcher
     search: TavilySearch | None = None
     hubspot: HubSpotClient | None = None
+    kb: KnowledgeBaseSearch | None = None
     # Notes já criadas, por `run_id` (produção: tabela `tool_cache` no Postgres).
     ledger: ToolCache = field(default_factory=MemoryCache)
 
@@ -126,6 +139,17 @@ def build_server(deps: ToolDeps) -> MCPServer:
     async def fetch_company_site(domain: str) -> SiteContent:
         """Lê a home e a página "sobre" do site da empresa (só IP público, texto truncado)."""
         return await _run(lambda: deps.site.fetch(domain))
+
+    @server.tool(annotations=INTERNAL_READ)
+    async def search_knowledge_base(
+        query: str, filters: KBFilters | None = None, k: int = DEFAULT_K
+    ) -> KBSearchResult:
+        """Busca na base interna (playbooks por tier, cases por setor, objeções e produto).
+
+        `filters` restringe por tipo de documento, tier, setor da ontologia ou segmento; cada
+        documento aparece uma vez, com o melhor trecho. Cite o `doc_id` do resultado."""
+        kb = _require(deps.kb, "Base de conhecimento")
+        return await _run(lambda: kb.search(query, filters, k))
 
     @server.tool(annotations=CRM_UPSERT)
     async def hubspot_upsert_company(company: CompanyProps) -> UpsertResult:
@@ -210,7 +234,8 @@ def build_app(server: MCPServer, settings: ToolsSettings) -> ASGIApp:
 @asynccontextmanager
 async def production_deps(settings: ToolsSettings) -> AsyncIterator[ToolDeps]:
     engine = create_engine(settings.database_url)
-    cache = PostgresCache(session_factory(engine))
+    sessions = session_factory(engine)
+    cache = PostgresCache(sessions)
     try:
         yield ToolDeps(
             site=SiteFetcher(cache, fixtures_dir=settings.fixtures_dir),
@@ -218,6 +243,14 @@ async def production_deps(settings: ToolsSettings) -> AsyncIterator[ToolDeps]:
             if settings.tavily_api_key
             else None,
             hubspot=HubSpotClient(settings.hubspot_token) if settings.hubspot_token else None,
+            kb=KnowledgeBaseSearch(
+                OllamaEmbedder(
+                    OllamaClient(settings.ollama_base_url), get_catalog().get("ollama-embedding")
+                ),
+                PostgresKBStore(sessions),
+            )
+            if settings.ollama_base_url
+            else None,
             ledger=cache,
         )
     finally:

@@ -62,7 +62,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T21: API FastAPI (`app/api/`: 202 + background com fila limitada, `GET /v1/runs[/{id}]`, `/health`, `X-API-Key`, 413/422 sem eco/429). `record_run` completa a execução criada pela API e grava `crm_ids`. Real: L024 via API em 3,2 s. 559 testes + 24 de integração.
 - ✅ T22: `Dockerfile.api` + compose completo (`migrate` → `tools-mcp` → `api`, healthchecks, segredos por serviço), varredura de execuções órfãs na subida, `scripts/smoke_e2e.sh` e demo offline (`evals/demo.py`, fita em `evals/demo/cassette.json`, workflow `Demo offline` com Job Summary, guarda de rede por audit hook).
 - ✅ T23: base de conhecimento (`knowledge_base/`, 21 documentos fictícios: 4 playbooks, 8 cases, 5 objeções e 4 de produto) e `app/knowledge_base.py` (metadados validados, setor pelo CNAE do segmento, conteúdo recusado com injeção, HTML, links ou dados pessoais). 630 testes.
-- ⏭️ **Próximo passo:** T24 (ingestão e busca: `scripts/ingest_kb.py`, `tools_mcp/kb.py`, hit rate@3 ≥ 80%). Pendência do autor na T22: gravar o GIF da demo e o print do Job Summary (o smoke já passou, e o Docker roda só no terminal do Ubuntu). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
+- ✅ T24: `scripts/ingest_kb.py` (96 chunks por seção, embeddings `nomic-embed-text:v1.5` no Ollama, idempotente por hash), tabela `kb_chunks` (migration 0004, tipo `vector` próprio em `app/audit/vector.py`), `tools_mcp/kb.py` e a tool MCP `search_knowledge_base` (filtro por tipo, tier, setor e segmento, um resultado por documento). `evals/kb_eval.py`: hit rate@3 de 100% com e sem filtro (MRR 1,00 × 0,77). 677 testes + 33 de integração.
+- ⏭️ **Próximo passo:** T25 (loop de pesquisa agêntico, até 3 iterações e com teto de custo). Pendência do autor na T22: gravar o GIF da demo e o print do Job Summary (o smoke já passou, e o Docker roda só no terminal do Ubuntu). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash
@@ -77,4 +78,6 @@ docker compose up -d --build tools-mcp # servidor MCP lead-tools em 127.0.0.1:80
 uv run uvicorn --factory app.api.production:build_app --port 8000   # API (OpenAPI em /docs)
 docker compose up -d --build api && scripts/smoke_e2e.sh   # sistema completo + smoke (grava no HubSpot)
 uv run python -m evals.demo            # demo offline (fita gravada, sem rede)
+uv run python scripts/ingest_kb.py     # indexa a base de conhecimento (exige nomic-embed-text:v1.5 no Ollama)
+uv run python -m evals.kb_eval         # hit rate@3 da busca na base
 ```

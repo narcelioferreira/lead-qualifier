@@ -40,7 +40,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | | T21: API FastAPI (202 + polling, `X-API-Key`, fila limitada, OpenAPI em `/docs`) | ✅ |
 | | T22: sistema completo em Docker, smoke de ponta a ponta e demo offline no Actions | ✅ |
 | F. RAG agêntico | T23: base de conhecimento (21 documentos fictícios com metadados validados) | ✅ |
-| | T24–T27: ingestão e busca, pesquisa agêntica, próximo passo com RAG e avaliação | ⏳ |
+| | T24: ingestão no pgvector e tool `search_knowledge_base` (hit rate@3 de 100% em 10 perguntas) | ✅ |
+| | T25–T27: pesquisa agêntica, próximo passo com RAG e avaliação | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
 O plano completo, com os 36 passos e seus critérios de aceite, está em [`docs/04-plano-de-tasks.md`](docs/04-plano-de-tasks.md).
@@ -89,8 +90,9 @@ As ferramentas do agente ficam atrás de um servidor **MCP** (SDK oficial `mcp` 
 | `hubspot_upsert_contact` | escrita idempotente | Cria ou atualiza o contato pelo e-mail |
 | `hubspot_associate` | escrita idempotente | Associa o contato à empresa |
 | `hubspot_create_note` | escrita | Cria a Note com a justificativa (HTML escapado) |
+| `search_knowledge_base` | leitura (interna) | Busca vetorial na base de conhecimento com filtro por tipo, tier, setor e segmento; um resultado por documento, com o `doc_id` para citar |
 
-Nenhuma tool apaga dados. O servidor exige **token Bearer** (sem ele, nem sobe), bloqueia `Host` fora da allowlist (DNS rebinding) e roda sem root, com disco só leitura, sem capabilities e sem binários setuid.
+Nenhuma tool apaga dados. A demonstração abaixo é da T19, com as 6 tools da época; a `search_knowledge_base` entrou na T24. O servidor exige **token Bearer** (sem ele, nem sobe), bloqueia `Host` fora da allowlist (DNS rebinding) e roda sem root, com disco só leitura, sem capabilities e sem binários setuid.
 
 Demonstração com o cliente MCP oficial, contra o container no ar (`uv run python scripts/mcp_demo.py`). O token vem do `.env` e não aparece na saída:
 
@@ -276,6 +278,8 @@ uv sync                                 # dependências
 docker compose up -d postgres ollama    # Postgres + pgvector e Ollama (portas só em 127.0.0.1)
 docker compose exec ollama ollama pull qwen3:4b
 uv run alembic upgrade head             # migrations
+docker compose exec ollama ollama pull nomic-embed-text:v1.5
+uv run python scripts/ingest_kb.py      # indexa a base de conhecimento no pgvector (idempotente)
 ```
 
 ```bash
@@ -283,6 +287,7 @@ make check                              # gate completo: lint, tipos, testes, se
 uv run pytest -m integration            # testes contra serviços reais (Groq, Tavily, Ollama, Postgres)
 uv run python scripts/qualify.py L024   # qualifica um lead do split dev e mostra o resultado auditado
 uv run python -m evals.run --split dev --config mvp   # avaliação (retomável com --resume)
+uv run python -m evals.kb_eval          # hit rate@3 da busca na base de conhecimento
 docker compose up -d --build tools-mcp  # servidor MCP lead-tools em http://127.0.0.1:8001/mcp (Bearer TOOLS_MCP_TOKEN)
 uv run uvicorn --factory app.api.production:build_app --port 8000   # API em http://127.0.0.1:8000/docs
 ```
@@ -306,7 +311,7 @@ app/
   integrity.py            hash de prompts e configuração (integrity.lock.json)
   retry.py                retry com respeito ao retry-after
   knowledge_base.py       metadados e validação da base de conhecimento
-tools_mcp/                servidor MCP lead-tools: busca (Tavily), sites, HubSpot
+tools_mcp/                servidor MCP lead-tools: busca (Tavily), sites, HubSpot, base de conhecimento
 knowledge_base/           base de conhecimento fictícia (playbooks, cases, objeções, produto)
 evals/                    dataset, gabarito, rotulagem, métricas e runner de avaliação
 migrations/               Alembic
@@ -318,7 +323,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 
 ## Qualidade
 
-- **630 testes** unitários, de grafo e de API, sem rede, e **25 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
+- **677 testes** unitários, de grafo e de API, sem rede, e **33 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
 - Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):

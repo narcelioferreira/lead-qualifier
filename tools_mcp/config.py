@@ -7,7 +7,7 @@ token do próprio servidor). A API nunca recebe essas chaves (ASI03).
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_TOKEN_LENGTH = 32
@@ -32,6 +32,8 @@ class ToolsSettings(BaseSettings):
     tools_mcp_port: int = Field(default=8001, ge=1024, le=65535)
     # Valores aceitos no header `Host` (proteção contra DNS rebinding). Separados por vírgula.
     tools_mcp_allowed_hosts: str = "127.0.0.1:*,localhost:*"
+    # Embeddings da consulta na base de conhecimento (T24). Sem URL, a tool responde com erro.
+    ollama_base_url: HttpUrl | None = None
     # Domínios `.example` do dataset são servidos por fixtures (avaliação).
     fixtures_dir: Path | None = None
 

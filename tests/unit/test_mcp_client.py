@@ -11,10 +11,14 @@ from mcp.client.client import Client
 from pydantic import SecretStr
 from tenacity import wait_none
 
+from app.knowledge_base import DocType, load_knowledge_base
 from app.mcp_client import LeadTools
+from app.schemas import Tier
+from tests.unit.test_kb_index import FakeEmbedder
 from tools_mcp.base import MemoryCache, ToolRequestError, ToolUnavailableError
 from tools_mcp.hubspot import CompanyProps, ContactProps, HubSpotClient
 from tools_mcp.hubspot_http import HUBSPOT_URL
+from tools_mcp.kb import KBFilters, KnowledgeBaseSearch, MemoryKBStore, ingest
 from tools_mcp.search import TAVILY_URL, TavilySearch
 from tools_mcp.server import ToolDeps, build_server
 from tools_mcp.site import SiteFetcher
@@ -118,3 +122,18 @@ async def test_transporte_fora_vira_indisponivel_sem_detalhe() -> None:
 async def test_resposta_fora_do_schema_e_recusada() -> None:
     with pytest.raises(ToolUnavailableError, match="fora do schema"):
         await LeadTools(_WrongShapeClient()).search("x")  # type: ignore[arg-type]
+
+
+async def test_search_knowledge_base_pelo_mcp() -> None:
+    store, embedder = MemoryKBStore(), FakeEmbedder()
+    await ingest(load_knowledge_base(), embedder, store)
+    deps = tool_deps(kb=KnowledgeBaseSearch(embedder, store))
+    async with Client(build_server(deps)) as client:
+        tools = LeadTools(client)
+        filtered = await tools.search_knowledge_base(
+            "como abordar", KBFilters(doc_types=[DocType.PLAYBOOK], tier=Tier.D)
+        )
+        unfiltered = await tools.search_knowledge_base("objeção de preço", k=2)
+    assert [h.doc_id for h in filtered.results] == ["playbook-tier-d"]
+    assert filtered.filters.tier is Tier.D
+    assert len(unfiltered.results) == 2

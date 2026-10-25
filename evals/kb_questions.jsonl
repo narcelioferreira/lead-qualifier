@@ -1,0 +1,10 @@
+{"id": "Q01", "question": "Como abordar um lead com decisor, frota média e pedido de proposta?", "expected_doc_id": "playbook-tier-a", "filters": {"doc_types": ["playbook"], "tier": "A"}}
+{"id": "Q02", "question": "Qual a cadência de contato do SDR para um lead que só quer conhecer a plataforma?", "expected_doc_id": "playbook-tier-b", "filters": {"doc_types": ["playbook"], "tier": "B"}}
+{"id": "Q03", "question": "O que fazer quando quem escreve é um estudante ou alguém procurando emprego?", "expected_doc_id": "playbook-tier-d", "filters": {"doc_types": ["playbook"], "tier": "D"}}
+{"id": "Q04", "question": "Exemplo de transportadora que reduziu o gasto com diesel e as quebras na estrada", "expected_doc_id": "case-transportadora-serra-azul", "filters": {"doc_types": ["case"], "segment": "transporte_cargas"}}
+{"id": "Q05", "question": "Distribuidora que passou a entregar dentro do horário combinado com o cliente", "expected_doc_id": "case-distribuidora-vale-verde", "filters": {"doc_types": ["case"], "segment": "distribuicao"}}
+{"id": "Q06", "question": "Cliente do agronegócio que controlava mal o abastecimento no campo", "expected_doc_id": "case-agro-tres-rios", "filters": {"doc_types": ["case"], "sector": "adjacent"}}
+{"id": "Q07", "question": "O prospect achou a mensalidade cara. Como argumentar?", "expected_doc_id": "objecao-preco", "filters": {"doc_types": ["objection"], "tier": "A"}}
+{"id": "Q08", "question": "Os motoristas têm medo de ser vigiados pela telemetria", "expected_doc_id": "objecao-resistencia-motoristas", "filters": {"doc_types": ["objection"], "tier": "B"}}
+{"id": "Q09", "question": "Quanto custa a instalação e quanto tempo leva para colocar no ar?", "expected_doc_id": "produto-precos-implantacao", "filters": {"doc_types": ["product"]}}
+{"id": "Q10", "question": "A plataforma conversa com o ERP e cumpre a LGPD?", "expected_doc_id": "produto-integracoes-seguranca", "filters": {"doc_types": ["product"]}}
