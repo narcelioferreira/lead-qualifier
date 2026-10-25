@@ -8,6 +8,9 @@
                    ▼
                assess → compute_score → write_to_crm → audit_log ─► END
 
+Com `agentic=True` (T25), o `research` vira `agentic_research`, com uma aresta de volta para
+si mesmo enquanto houver consulta pendente (no máximo 3 iterações, conferidas pelo roteador).
+
 Os nós de pesquisa, LLM, CRM e auditoria são injetados (`GraphNodes`): stubs na T13, reais na T14
 e mocks nos testes de grafo. `validate_input` e `compute_score` são código determinístico e
 não mudam.
@@ -34,6 +37,7 @@ class Node(Protocol):
 CompiledGraph = CompiledStateGraph[QualificationState, None, GraphInput, QualificationState]
 
 MERMAID_PATH = Path(__file__).resolve().parents[2] / "docs" / "grafo.mmd"
+MERMAID_AGENTIC_PATH = MERMAID_PATH.with_name("grafo-agentico.mmd")
 
 
 @dataclass(frozen=True)
@@ -45,11 +49,12 @@ class GraphNodes:
     audit_log: Node = stubs.audit_log
 
 
-def build_graph(nodes: GraphNodes | None = None) -> CompiledGraph:
+def build_graph(nodes: GraphNodes | None = None, *, agentic: bool = False) -> CompiledGraph:
     nodes = nodes or GraphNodes()
+    research = "agentic_research" if agentic else "research"
     graph = StateGraph(QualificationState, input_schema=GraphInput)
     graph.add_node("validate_input", core.validate_input)
-    graph.add_node("research", nodes.research)
+    graph.add_node(research, nodes.research)
     graph.add_node("normalize", nodes.normalize)
     graph.add_node("assess", nodes.assess)
     graph.add_node("compute_score", core.compute_score)
@@ -60,9 +65,14 @@ def build_graph(nodes: GraphNodes | None = None) -> CompiledGraph:
     graph.add_conditional_edges(
         "validate_input",
         core.route_after_validation,
-        {"continue": "research", "reject": "audit_log"},
+        {"continue": research, "reject": "audit_log"},
     )
-    graph.add_edge("research", "normalize")
+    if agentic:
+        graph.add_conditional_edges(
+            research, core.route_research, {"continue": research, "done": "normalize"}
+        )
+    else:
+        graph.add_edge(research, "normalize")
     graph.add_conditional_edges(
         "normalize",
         core.route_unless_failed,

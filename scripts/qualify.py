@@ -14,14 +14,18 @@ from app.graph.runtime import production_graph
 from evals.dataset import load_dataset
 
 
-async def main(ids: list[str], *, crm: bool = False, prompt_version: str = "v2") -> int:
+async def main(
+    ids: list[str], *, crm: bool = False, prompt_version: str = "v2", agentic: bool = False
+) -> int:
     items = {item.id: item for item in load_dataset()}
     for lead_id in ids:
         if lead_id not in items:
             raise SystemExit(f"lead desconhecido: {lead_id}")
         if items[lead_id].split != "dev":
             raise SystemExit(f"{lead_id} é do split test, reservado às avaliações (T16+)")
-    async with production_graph(get_settings(), prompt_version=prompt_version, write_crm=crm) as (
+    async with production_graph(
+        get_settings(), prompt_version=prompt_version, write_crm=crm, agentic=agentic
+    ) as (
         graph,
         audit,
     ):
@@ -37,6 +41,11 @@ async def main(ids: list[str], *, crm: bool = False, prompt_version: str = "v2")
                 f"score={result.score if result else '-'} "
                 f"confiança={state.get('confidence', '-')}"
             )
+            if agentic:
+                print(
+                    f"pesquisa: {state.get('research_iterations', 0)} iteração(ões), "
+                    f"consultas={state.get('research_queries', [])}"
+                )
             if result:
                 print(
                     f"regras={result.disqualifiers} tetos={result.caps_applied} "
@@ -58,5 +67,12 @@ if __name__ == "__main__":
     parser.add_argument("ids", nargs="+")
     parser.add_argument("--crm", action="store_true", help="grava empresa, contato e Note")
     parser.add_argument("--prompt-version", default="v2", help="versão dos prompts (MVP: v2)")
+    parser.add_argument(
+        "--agentic", action="store_true", help="pesquisa agêntica da T25 (use --prompt-version v3)"
+    )
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(main(args.ids, crm=args.crm, prompt_version=args.prompt_version)))
+    raise SystemExit(
+        asyncio.run(
+            main(args.ids, crm=args.crm, prompt_version=args.prompt_version, agentic=args.agentic)
+        )
+    )

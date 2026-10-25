@@ -31,6 +31,9 @@ class QualificationState(GraphInput, total=False):
     lead: LeadInput
     evidence: Annotated[list[Evidence], operator.add]
     research_iterations: int
+    # Pesquisa agêntica (T25): consultas já feitas e a próxima, decidida pelo código.
+    research_queries: list[str]
+    research_next: str | None
     profile: LeadProfile
     # Ids (E1, E2...) das evidências que o LLM citou na extração, já filtrados.
     evidence_ids: list[str]

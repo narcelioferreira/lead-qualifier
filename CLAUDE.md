@@ -63,7 +63,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T22: `Dockerfile.api` + compose completo (`migrate` → `tools-mcp` → `api`, healthchecks, segredos por serviço), varredura de execuções órfãs na subida, `scripts/smoke_e2e.sh` e demo offline (`evals/demo.py`, fita em `evals/demo/cassette.json`, workflow `Demo offline` com Job Summary, guarda de rede por audit hook).
 - ✅ T23: base de conhecimento (`knowledge_base/`, 21 documentos fictícios: 4 playbooks, 8 cases, 5 objeções e 4 de produto) e `app/knowledge_base.py` (metadados validados, setor pelo CNAE do segmento, conteúdo recusado com injeção, HTML, links ou dados pessoais). 630 testes.
 - ✅ T24: `scripts/ingest_kb.py` (96 chunks por seção, embeddings `nomic-embed-text:v1.5` no Ollama, idempotente por hash), tabela `kb_chunks` (migration 0004, tipo `vector` próprio em `app/audit/vector.py`), `tools_mcp/kb.py` e a tool MCP `search_knowledge_base` (filtro por tipo, tier, setor e segmento, um resultado por documento). `evals/kb_eval.py`: hit rate@3 de 100% com e sem filtro (MRR 1,00 × 0,77). 677 testes + 33 de integração.
-- ⏭️ **Próximo passo:** T25 (loop de pesquisa agêntico, até 3 iterações e com teto de custo). Pendência do autor na T22: gravar o GIF da demo e o print do Job Summary (o smoke já passou, e o Docker roda só no terminal do Ubuntu). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
+- ✅ T25: `app/graph/nodes/research.py` (nó `agentic_research` em loop: o mini diz o que falta e propõe a consulta, o código decide; até 3 iterações com teto fixo no roteador, teto de tokens, consulta validada, sem planejador com injeção), `build_graph(agentic=True)`, `production_graph(agentic=True)`, `scripts/qualify.py --agentic` e prompts `v3` (= `v2` + `research_plan`). Real: L024 A em 1 iteração; L002 B (rótulo B) em 2. 708 testes.
+- ⏭️ **Próximo passo:** T26 (`suggest_next_step` com RAG no playbook e nos cases, citando o `doc_id`; LLM-as-judge conferido em 10 casos). Pendência do autor na T22: gravar o GIF da demo e o print do Job Summary (o smoke já passou, e o Docker roda só no terminal do Ubuntu). Auditoria de tokens da T16 no README (runner × painel: 0,02% nos dias sem tráfego externo). Ajustes nos erros do test só a partir de casos do dev (prompt novo = `v3` + `scripts/lock_config.py`).
 
 ## Comandos
 ```bash
@@ -80,4 +81,5 @@ docker compose up -d --build api && scripts/smoke_e2e.sh   # sistema completo + 
 uv run python -m evals.demo            # demo offline (fita gravada, sem rede)
 uv run python scripts/ingest_kb.py     # indexa a base de conhecimento (exige nomic-embed-text:v1.5 no Ollama)
 uv run python -m evals.kb_eval         # hit rate@3 da busca na base
+uv run python scripts/qualify.py --agentic --prompt-version v3 L002   # pesquisa agêntica (T25)
 ```

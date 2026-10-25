@@ -13,6 +13,9 @@ from app.ontology.scoring import compute_score as score_profile
 from app.schemas import LeadInput, QualificationResult
 
 MAX_VALIDATION_ERRORS = 5
+# Teto fixo de iterações da pesquisa agêntica (T25), conferido pelo roteador independente dos
+# limites configurados no nó: nem um nó com defeito gera loop infinito.
+HARD_MAX_ITERATIONS = 3
 
 
 def validate_input(state: QualificationState) -> dict[str, Any]:
@@ -47,6 +50,14 @@ def route_after_validation(state: QualificationState) -> str:
 
 def route_unless_failed(state: QualificationState) -> str:
     return "fail" if state.get("status") == "failed" else "continue"
+
+
+def route_research(state: QualificationState) -> str:
+    """Volta ao `agentic_research` só se há consulta pendente e o teto fixo não foi atingido."""
+    pending = state.get("research_next")
+    if pending and state.get("research_iterations", 0) < HARD_MAX_ITERATIONS:
+        return "continue"
+    return "done"
 
 
 def compute_score(state: QualificationState) -> dict[str, Any]:

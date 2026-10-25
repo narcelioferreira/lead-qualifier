@@ -184,48 +184,61 @@ async def _ask[T: BaseModel](
     return None, steps, [f"{node}: saída do LLM inválida após 2 tentativas"]
 
 
-def make_nodes(deps: MvpDeps) -> GraphNodes:
-    async def research(state: QualificationState) -> dict[str, Any]:
-        lead = state["lead"]
-        now = datetime.now(UTC)
-        evidence = [
-            Evidence(
-                source_type=EvidenceSource.LEAD_MESSAGE,
-                snippet=f"Cargo: {lead.contact_role}. Mensagem: {lead.message or '(vazia)'}"[:1000],
-                retrieved_at=now,
-            )
-        ]
-        errors: list[str] = []
-        if lead.company_domain:
-            try:
-                site = await deps.site.fetch(lead.company_domain)
-            except ToolError as exc:
-                errors.append(f"site: {exc}")
-            else:
-                errors += [f"site: {e}" for e in site.errors]
-                evidence += [
-                    Evidence(
-                        source_type=EvidenceSource.COMPANY_SITE,
-                        source_url=page.url,
-                        snippet=page.text[:SITE_SNIPPET_CHARS] or "(página sem texto)",
-                        retrieved_at=site.retrieved_at,
-                    )
-                    for page in site.pages
-                ]
+def search_evidence(found: SearchResult) -> list[Evidence]:
+    return [
+        Evidence(
+            source_type=EvidenceSource.WEB_SEARCH,
+            source_url=r.url,
+            snippet=f"{r.title}: {r.snippet}"[:SEARCH_SNIPPET_CHARS],
+            retrieved_at=found.retrieved_at,
+        )
+        for r in found.results[:MAX_SEARCH_RESULTS]
+    ]
+
+
+async def initial_research(deps: MvpDeps, lead: LeadInput) -> tuple[list[Evidence], list[str]]:
+    """Mensagem do lead, site declarado (home + sobre) e uma busca pelo nome da empresa."""
+    now = datetime.now(UTC)
+    evidence = [
+        Evidence(
+            source_type=EvidenceSource.LEAD_MESSAGE,
+            snippet=f"Cargo: {lead.contact_role}. Mensagem: {lead.message or '(vazia)'}"[:1000],
+            retrieved_at=now,
+        )
+    ]
+    errors: list[str] = []
+    if lead.company_domain:
         try:
-            found = await deps.search.search(f"{lead.company_name} empresa")
+            site = await deps.site.fetch(lead.company_domain)
         except ToolError as exc:
-            errors.append(f"busca: {exc}")
+            errors.append(f"site: {exc}")
         else:
+            errors += [f"site: {e}" for e in site.errors]
             evidence += [
                 Evidence(
-                    source_type=EvidenceSource.WEB_SEARCH,
-                    source_url=r.url,
-                    snippet=f"{r.title}: {r.snippet}"[:SEARCH_SNIPPET_CHARS],
-                    retrieved_at=found.retrieved_at,
+                    source_type=EvidenceSource.COMPANY_SITE,
+                    source_url=page.url,
+                    snippet=page.text[:SITE_SNIPPET_CHARS] or "(página sem texto)",
+                    retrieved_at=site.retrieved_at,
                 )
-                for r in found.results[:MAX_SEARCH_RESULTS]
+                for page in site.pages
             ]
+    try:
+        found = await deps.search.search(initial_query(lead))
+    except ToolError as exc:
+        errors.append(f"busca: {exc}")
+    else:
+        evidence += search_evidence(found)
+    return evidence, errors
+
+
+def initial_query(lead: LeadInput) -> str:
+    return f"{lead.company_name} empresa"
+
+
+def make_nodes(deps: MvpDeps) -> GraphNodes:
+    async def research(state: QualificationState) -> dict[str, Any]:
+        evidence, errors = await initial_research(deps, state["lead"])
         return {
             "evidence": evidence,
             "research_iterations": state.get("research_iterations", 0) + 1,

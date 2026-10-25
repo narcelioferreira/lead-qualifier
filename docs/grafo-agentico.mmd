@@ -1,0 +1,29 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	validate_input(validate_input)
+	agentic_research(agentic_research)
+	normalize(normalize)
+	assess(assess)
+	compute_score(compute_score)
+	write_to_crm(write_to_crm)
+	audit_log(audit_log)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> validate_input;
+	agentic_research -. &nbsp;done&nbsp; .-> normalize;
+	assess --> compute_score;
+	compute_score --> write_to_crm;
+	normalize -. &nbsp;continue&nbsp; .-> assess;
+	normalize -. &nbsp;fail&nbsp; .-> audit_log;
+	validate_input -. &nbsp;continue&nbsp; .-> agentic_research;
+	validate_input -. &nbsp;reject&nbsp; .-> audit_log;
+	write_to_crm --> audit_log;
+	audit_log --> __end__;
+	agentic_research -. &nbsp;continue&nbsp; .-> agentic_research;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

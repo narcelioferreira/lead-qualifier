@@ -6,6 +6,7 @@ Tavily e do HubSpot ficam só no container `tools-mcp`, que também serve as fix
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from app import integrity
 from app.audit.db import create_engine, session_factory
@@ -13,6 +14,7 @@ from app.audit.repository import AuditRepository
 from app.config import Settings
 from app.graph.builder import CompiledGraph, build_baseline_graph, build_graph
 from app.graph.nodes.mvp import MvpDeps, make_baseline_nodes, make_nodes
+from app.graph.nodes.research import AGENTIC_BUDGET, make_agentic_nodes
 from app.llm.groq_client import GroqClient
 from app.mcp_client import connect
 
@@ -44,15 +46,26 @@ async def production_deps(
 
 @asynccontextmanager
 async def production_graph(
-    settings: Settings, *, prompt_version: str = "v1", write_crm: bool = False
+    settings: Settings,
+    *,
+    prompt_version: str = "v1",
+    write_crm: bool = False,
+    agentic: bool = False,
 ) -> AsyncIterator[tuple[CompiledGraph, AuditRepository]]:
-    """Grafo do MVP com dependências reais, mais o repositório de auditoria."""
+    """Grafo do MVP com dependências reais, mais o repositório de auditoria.
+
+    `agentic=True` troca a pesquisa pelo loop da T25 (exige prompts `v3`) e amplia o orçamento.
+    """
     async with production_deps(
         settings, prompt_version=prompt_version, write_crm=write_crm
     ) as deps:
         if deps.audit is None:  # pragma: no cover - production_deps sempre cria a auditoria
             raise RuntimeError("auditoria não configurada")
-        yield build_graph(make_nodes(deps)), deps.audit
+        if agentic:
+            nodes = make_agentic_nodes(replace(deps, budget=AGENTIC_BUDGET))
+            yield build_graph(nodes, agentic=True), deps.audit
+        else:
+            yield build_graph(make_nodes(deps)), deps.audit
 
 
 @asynccontextmanager
