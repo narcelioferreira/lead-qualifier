@@ -39,7 +39,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | | T20: grafo via MCP e `write_to_crm` (Note idempotente por `run_id`) | ✅ |
 | | T21: API FastAPI (202 + polling, `X-API-Key`, fila limitada, OpenAPI em `/docs`) | ✅ |
 | | T22: sistema completo em Docker, smoke de ponta a ponta e demo offline no Actions | ✅ |
-| F. RAG agêntico | T24–T27: base de conhecimento, pesquisa agêntica, próximo passo | ⏳ |
+| F. RAG agêntico | T23: base de conhecimento (21 documentos fictícios com metadados validados) | ✅ |
+| | T24–T27: ingestão e busca, pesquisa agêntica, próximo passo com RAG e avaliação | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
 O plano completo, com os 36 passos e seus critérios de aceite, está em [`docs/04-plano-de-tasks.md`](docs/04-plano-de-tasks.md).
@@ -219,11 +220,11 @@ O modelo de ameaças completo, o mapeamento AST, os testes por controle e os ris
 | Risco (OWASP) | Controles implementados | Planejado |
 |---|---|---|
 | **ASI01 · Goal Hijack** (prompt injection) · AST05 | Conteúdo não confiável em blocos `<dados_{nonce}>` com nonce aleatório por chamada. **Detector determinístico** na mensagem, no cargo e no site da empresa: com um padrão conhecido, o texto **nem chega ao LLM** e o lead é desqualificado (K1). Saída só com enums, e **o score é calculado em código** | Guardrail com SLM local (T28) |
-| **ASI02 · Tool Misuse** · AST03, AST06 | **SSRF** bloqueado em cada requisição e redirect (só IP público, portas 80/443, sem credenciais, até 5 MB). Tools do HubSpot com allowlist de propriedades, IDs validados, sem delete e anotações honestas (leitura × escrita) | Validação antes de cada escrita no grafo (T20) |
-| **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres, Ollama e MCP só em `127.0.0.1`. **Chaves da Tavily e do HubSpot isoladas no container de tools**, que exige Bearer token; chave de serviço do HubSpot com escopos mínimos | `X-API-Key` na API (T21) |
+| **ASI02 · Tool Misuse** · AST03, AST06 | **SSRF** bloqueado em cada requisição e redirect (só IP público, portas 80/443, sem credenciais, até 5 MB). Tools do HubSpot com allowlist de propriedades, IDs validados, sem delete e anotações honestas (leitura × escrita). O servidor **recusa argumentos fora do schema** antes de executar, e o cliente valida a resposta | — |
+| **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres, Ollama e MCP só em `127.0.0.1`. **Chaves da Tavily e do HubSpot isoladas no container de tools**, que exige Bearer token; chave de serviço do HubSpot com escopos mínimos. `X-API-Key` na API, comparada em tempo constante | — |
 | **ASI04 · Supply Chain** · AST02, AST07 | `uv.lock` com hashes, pip-audit, bandit e detect-secrets. **Actions fixadas por SHA**, **imagens por digest** e Dependabot. **Prompts e configuração com SHA-256** (`integrity.lock.json`): versão publicada é imutável e o agente **recusa iniciar** se algo divergir | — |
 | **ASI05 · Code Execution** · AST04 | Nenhuma ferramenta executa código; a saída do LLM é só JSON validado; YAML com `safe_load` | — |
-| **ASI06 · Context Poisoning** | Cache só de sucessos, com texto sanitizado; o detector de injeção roda **a cada execução**, inclusive sobre conteúdo vindo do cache | Isolamento dos chunks do RAG (Fase F) |
+| **ASI06 · Context Poisoning** | Cache só de sucessos, com texto sanitizado; o detector de injeção roda **a cada execução**, inclusive sobre conteúdo vindo do cache. **Base de conhecimento curada:** todo documento passa pelo detector de injeção e é recusado se tiver caracteres invisíveis, HTML, links ou dados pessoais | Isolamento dos chunks do RAG no prompt (T26) |
 | **ASI08 · Cascading Failures** · AST08 | **Orçamento por execução** (chamadas ao LLM, tokens e tempo), retries limitados, falhas de ferramenta sem derrubar a execução, disjuntor no runner e fail closed | Teto do loop agêntico (T25) |
 | **ASI09 · Human Trust** | **Saída saneada antes de sair do agente:** a justificativa que vai ao CRM perde HTML, links fora das evidências e caracteres invisíveis. Confiança calculada em código, nunca autodeclarada | Revisão humana com `interrupt()` (T31) |
 | **ASI10 · Rogue Agents** · AST09 | Grafo com arestas fixas, tier pelo código e auditoria completa (`agent_runs`/`agent_steps`) com o digest da configuração | Limite de iterações no loop agêntico (T25) |
@@ -248,7 +249,7 @@ Os detalhes estão no documento 06.
 
 Python 3.12 · uv · LangGraph · **Groq** (`openai/gpt-oss-20b` e `gpt-oss-120b`, structured output estrito, plano gratuito) · **Ollama** (SLM local `qwen3:4b` e embeddings) · Tavily · trafilatura · Postgres 16 + pgvector · SQLAlchemy (async) + Alembic · httpx + tenacity · Pydantic · pytest + respx · ruff · mypy · bandit · Docker Compose · GitHub Actions.
 
-Integrações: **MCP** (SDK `mcp` 2.x, servidor `lead-tools`) e **HubSpot** (chave de serviço). Prevista: FastAPI.
+Integrações: **MCP** (SDK `mcp` 2.x, servidor `lead-tools`), **HubSpot** (chave de serviço) e **FastAPI**.
 
 > O projeto começou com a OpenAI e migrou para a Groq na T10, para usar um plano gratuito. Os modelos `gpt-oss` têm pesos abertos, então o ID aponta para uma versão fixa, e os preços de lista ficam no catálogo para reportar o custo equivalente por lead.
 
@@ -304,7 +305,9 @@ app/
   security/               detector de prompt injection e saneamento da saída do LLM
   integrity.py            hash de prompts e configuração (integrity.lock.json)
   retry.py                retry com respeito ao retry-after
-tools_mcp/                busca (Tavily) e leitura de sites, com cache (viram tools MCP)
+  knowledge_base.py       metadados e validação da base de conhecimento
+tools_mcp/                servidor MCP lead-tools: busca (Tavily), sites, HubSpot
+knowledge_base/           base de conhecimento fictícia (playbooks, cases, objeções, produto)
 evals/                    dataset, gabarito, rotulagem, métricas e runner de avaliação
 migrations/               Alembic
 tests/                    unit/, graph/ (LLM mockado) e integration/ (serviços reais)
@@ -315,7 +318,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 
 ## Qualidade
 
-- **559 testes** unitários, de grafo e de API, sem rede, e **24 testes de integração** contra serviços reais. Cobertura de ~95%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
+- **630 testes** unitários, de grafo e de API, sem rede, e **25 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`) e nos nós determinísticos do grafo.
 - Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):

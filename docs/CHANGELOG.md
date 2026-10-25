@@ -638,3 +638,31 @@
   - o detect-secrets marcou o `config_digest` (SHA-256) da fita. Ele entrou no baseline como falso positivo, sem excluir o arquivo, que tem conteúdo da web e continua sendo verificado.
 - **Segurança:** ASI03 (segredos por container), ASI04 (bases por digest, workflow sem secrets e com Actions por SHA), ASI08 (nenhuma execução órfã) e LGPD (e-mails fora da fita).
 - **Limitações:** a fita fica desatualizada se os prompts mudarem; ela registra o `config_digest` e a versão do prompt, e se regrava com `--record`. A varredura de órfãs supõe uma instância da API.
+
+## T23: Base de conhecimento
+- **`knowledge_base/`:** 21 documentos fictícios em Markdown com front-matter YAML, mais um `README.md` com o formato e as regras:
+  - 4 **playbooks**, um por tier: ação, responsável, prazo e canal (A: AE em 24 h úteis; B: cadência de SDR em 48 h úteis; C: nutrição; D: arquivar com o motivo e encaminhar por tipo de regra eliminatória);
+  - 8 **cases** de clientes fictícios: 2 de transportadoras (49.30-2), 2 de distribuidoras e atacadistas (46.xx), e 1 de cada segmento adjacente (logística, agronegócio, construção e locadora), cada um com perfil, problema, solução, resultado em 6 meses e o argumento para leads parecidos;
+  - 5 **objeções** (preço, "já temos rastreador", resistência dos motoristas, tempo de implantação e integração com a TI);
+  - 4 documentos de **produto** (visão geral, módulos, preços e implantação, integrações e LGPD).
+  - Os números seguem o `01-contexto-negocio.md` (R$ 99 a R$ 159 por veículo, setup de R$ 5 mil a R$ 30 mil, meta de 8% a 15% em 6 meses).
+- **`app/knowledge_base.py`:** `KBMetadata` (`doc_id`, `title`, `doc_type`, `tiers`, `segments`, `version`, `updated`) e `load_knowledge_base()`. Listas vazias valem para todos os tiers ou segmentos. Regras:
+  - playbook tem exatamente um tier; case tem exatamente um segmento e não vale para o tier D;
+  - `doc_id` em kebab-case e igual ao nome do arquivo, sem ids repetidos;
+  - o corpo precisa ter seções `## `, porque a ingestão da T24 divide por seção.
+- **Decisão:** o documento declara o **segmento** (`transporte_cargas`, `distribuicao`, `logistica`...), e o `SectorFit` usado no filtro do RAG sai do CNAE representativo do segmento pela mesma `sectors.yaml` que classifica o lead. Um rótulo `sector: target` escrito à mão poderia divergir da taxonomia; assim, se a taxonomia mudar, o filtro acompanha.
+- **Teste:** `tests/unit/test_kb.py` (55):
+  - critérios de aceite: de 15 a 30 documentos válidos, os 4 tipos presentes, exatamente um playbook por tier e pelo menos um case por setor-alvo, com os dois segmentos-alvo mapeados para `target` pela taxonomia;
+  - nenhuma empresa do dataset (nome ou domínio, por palavra inteira) aparece na base, para não vazar para a avaliação;
+  - metadados inválidos (13 casos), `doc_id` inválido ou diferente do arquivo, front-matter ausente, YAML inválido ou que não é mapeamento, tag `!!python/object` não executada e documento sem seções;
+  - conteúdo inseguro (13 casos), injeção no front-matter, texto comercial legítimo sem falso positivo e a base versionada limpa;
+  - carregador: link simbólico, documento grande, pasta vazia e ordem por `doc_id`;
+  - **mutação:** desligar o detector de injeção, a checagem de caracteres invisíveis, cada padrão proibido (HTML, link, e-mail, telefone, CPF, CNPJ), a checagem do front-matter, `doc_id` igual ao arquivo, as regras de playbook e de case, link simbólico, tamanho, `safe_load`, `extra="forbid"` ou a exigência de seções derruba pelo menos 1 teste em cada uma das 20 mutações;
+  - `make check` (pelas ferramentas do `.venv`): 630 testes, cobertura de 94% (100% em `knowledge_base.py`), ruff, mypy strict, bandit, detect-secrets e pip-audit.
+- **Segurança (ASI06, Context Poisoning):** o texto da base vai para o prompt do `suggest_next_step` como contexto **confiável**, então um documento envenenado seria uma injeção com a autoridade da empresa. Todo documento (corpo e front-matter) passa pelo detector determinístico de injeção e é recusado com caracteres invisíveis ou de controle, HTML, links (o próximo passo cita o `doc_id`, nunca uma URL) ou dados pessoais. YAML só com `safe_load`, metadados com `extra="forbid"`, sem links simbólicos e até 20 KB por documento.
+- **Problemas corrigidos:**
+  - a checagem de vazamento acusou a L022, que é uma pessoa física com o "nome da empresa" genérico "Motorista autônomo". Leads sem domínio ficam fora da checagem;
+  - "Localiza" (L040) casava com "localização" por substring. A checagem passou a ser por palavra inteira;
+  - duas das minhas mutações (link e e-mail) só renomeavam o rótulo do padrão, que continuava ativo, e por isso sobreviviam. Refeitas com o padrão desligado, as duas derrubam testes.
+- **Documentação:** README (status da Fase F, controles já entregues que ainda apareciam como planejados, FastAPI na stack, estrutura e contagem de testes) e `06-seguranca-agentes.md` (ASI06).
+- **Limitações:** a base ainda não entra no `integrity.lock.json`. Na T24, a ingestão só aceita documentos que passam por `load_knowledge_base()` e grava o hash de cada documento junto dos chunks.
