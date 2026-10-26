@@ -10,12 +10,12 @@ Regras da série:
 |---|---|---|---|---|
 | 1 | O primeiro número real: 95% no dev, 60% no teste | T16 | Imagem da comparação baseline × MVP | ✍️ rascunho abaixo |
 | 2 | "O LLM extrai, o código pontua" e a rotulagem que achou falhas na regra | T07, T09, T13 | Diagrama do grafo | a fazer |
-| 3 | Injeção de prompt pedindo "tier A": de 2 casos para 0 | T16 + segurança de agentes | Exemplo da L005 (mensagem × resultado) | a fazer |
+| 3 | Injeção de prompt pedindo "tier A": de 2 casos para 0, com as boas práticas do OWASP Agentic Skills Top 10 (AST) e do OWASP Top 10 for Agentic Applications (ASI) | T16 + segurança de agentes (`docs/06-seguranca-agentes.md`) | Exemplo da L005 (mensagem × resultado) | a fazer |
 | 4 | O agente escrevendo no CRM: idempotência e o CRM como superfície de ataque | T18–T20 | `t22-hubspot-note.png` | a fazer |
 | 5 | Uma demo que roda sem nenhuma chave de API | T22 | `t22-demo-offline.gif` | a fazer |
 | 6 | RAG agêntico e um juiz LLM conferido por humano (9/10) | T25–T27 | a definir | após T27 |
 | 7 | Roteamento de modelos: custo × acurácia | T28–T30 | Gráfico custo × acurácia | após T30 |
-| 8 | Resultado final, erros e lições | T34–T36 | Matriz de confusão + link do repositório | após T34 |
+| 8 | Resultado final, erros e lições | T34–T36 | Matriz de confusão | após T34 |
 
 ---
 
@@ -51,6 +51,8 @@ O que eu aprendi:
 Próximos alvos, todos trabalhados só no dev: transportadoras grandes superestimadas, homônimos (pesquisar a empresa errada) e spam sem sentido.
 
 Stack: Python, LangGraph, Groq, Postgres/pgvector, MCP, FastAPI, Docker e HubSpot.
+
+O código, os relatórios de avaliação e os erros estão abertos: https://github.com/narcelioferreira/lead-qualifier
 
 Nos próximos posts: como a rotulagem achou falhas na minha própria regra de negócio antes de existir agente.
 
