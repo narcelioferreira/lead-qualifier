@@ -7,6 +7,8 @@
 - A demo não esconde erro: num dos 5 leads o agente discordou do rótulo humano (B → C), e o relatório mostra isso.
 - 📸 [`t22-demo-offline.gif`](t22-demo-offline.gif): a demo offline no terminal (`uv run python -m evals.demo`), com as linhas reais da saída: 401 sem chave, 422 quando o cliente tenta mandar o tier, os 5 leads e a concordância de 4/5.
 - 📸 [`t22-job-summary.png`](t22-job-summary.png): o Job Summary da demo, renderizado a partir do mesmo Markdown que o workflow grava no `$GITHUB_STEP_SUMMARY` (execução local de `python -m evals.demo --summary`, com a mesma fita do Actions). Não é um print da página do Actions: o repositório é privado, e a página só abre com login.
-- 📸 Pendente do autor: GIF do sistema completo em Docker (`docker compose up` → `scripts/smoke_e2e.sh` → `/docs` e a Note no HubSpot), que depende do Docker no terminal do Ubuntu e da conta do HubSpot.
+- 📸 Sistema completo em Docker, em prints do autor (no lugar do GIF: o Swagger mostra a `X-API-Key` no `curl` ao executar, e o vídeo gravado não pode ser publicado):
+  - [`t22-smoke.png`](t22-smoke.png): `scripts/smoke_e2e.sh` de ponta a ponta (401 sem chave, L024 tier A, registro conferido no HubSpot);
+  - [`t22-hubspot-note.png`](t22-hubspot-note.png): a empresa Gobor no HubSpot com a Note da qualificação (tier, critérios e justificativa);
+  - [`t22-docs-run.png`](t22-docs-run.png): `GET /v1/runs/{run_id}` no `/docs`, com a linha da chave coberta por um retângulo sólido.
 - Execução da demo no Actions (16 s, sem secrets): https://github.com/narcelioferreira/lead-qualifier/actions/runs/40022574667
-  - **Atenção:** com o repositório privado, esse link dá 404 para quem não é colaborador. Antes de publicar o post, tornar o repositório público (ou trocar o link pelas imagens acima).
