@@ -259,6 +259,8 @@ Python 3.12 · uv · LangGraph · **Groq** (`openai/gpt-oss-20b` e `gpt-oss-120b
 
 Integrações: **MCP** (SDK `mcp` 2.x, servidor `lead-tools`), **HubSpot** (chave de serviço) e **FastAPI**.
 
+Desenvolvimento: **Claude Code** (Anthropic) como assistente de programação, com as regras do projeto em [`CLAUDE.md`](CLAUDE.md). As decisões de negócio (ICP, rubrica e ajustes), a rotulagem do gabarito e a avaliação são do autor.
+
 > O projeto começou com a OpenAI e migrou para a Groq na T10, para usar um plano gratuito. Os modelos `gpt-oss` têm pesos abertos, então o ID aponta para uma versão fixa, e os preços de lista ficam no catálogo para reportar o custo equivalente por lead.
 
 ---
