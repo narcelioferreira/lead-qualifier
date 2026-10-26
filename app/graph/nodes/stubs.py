@@ -46,6 +46,11 @@ def assess(state: QualificationState) -> dict[str, Any]:
     }
 
 
+def suggest_next_step(state: QualificationState) -> dict[str, Any]:
+    """Sem próximo passo: a versão real (RAG, T26) está em `nodes/next_step.py`."""
+    return {"steps": [StepRecord(node="suggest_next_step", route_reason="stub: sem RAG")]}
+
+
 def write_to_crm(state: QualificationState) -> dict[str, Any]:
     """CRM desligado (avaliações e testes): nada é gravado no HubSpot."""
     return {"steps": [StepRecord(node="write_to_crm", route_reason="CRM desativado")]}

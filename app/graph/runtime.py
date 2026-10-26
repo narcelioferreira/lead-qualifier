@@ -14,6 +14,7 @@ from app.audit.repository import AuditRepository
 from app.config import Settings
 from app.graph.builder import CompiledGraph, build_baseline_graph, build_graph
 from app.graph.nodes.mvp import MvpDeps, make_baseline_nodes, make_nodes
+from app.graph.nodes.next_step import with_next_step
 from app.graph.nodes.research import AGENTIC_BUDGET, make_agentic_nodes
 from app.llm.groq_client import GroqClient
 from app.mcp_client import connect
@@ -36,6 +37,7 @@ async def production_deps(
                 search=tools,
                 site=tools,
                 crm=tools if write_crm else None,
+                kb=tools,
                 audit=AuditRepository(session_factory(engine)),
                 prompt_version=prompt_version,
                 config_digest=digest,
@@ -51,21 +53,25 @@ async def production_graph(
     prompt_version: str = "v1",
     write_crm: bool = False,
     agentic: bool = False,
+    next_step: bool = False,
 ) -> AsyncIterator[tuple[CompiledGraph, AuditRepository]]:
     """Grafo do MVP com dependências reais, mais o repositório de auditoria.
 
-    `agentic=True` troca a pesquisa pelo loop da T25 (exige prompts `v3`) e amplia o orçamento.
+    `agentic=True` troca a pesquisa pelo loop da T25 (exige prompts `v3` ou mais novos) e amplia
+    o orçamento. `next_step=True` acrescenta o próximo passo com RAG da T26 (exige `v4`).
     """
     async with production_deps(
         settings, prompt_version=prompt_version, write_crm=write_crm
     ) as deps:
-        if deps.audit is None:  # pragma: no cover - production_deps sempre cria a auditoria
+        audit = deps.audit
+        if audit is None:  # pragma: no cover - production_deps sempre cria a auditoria
             raise RuntimeError("auditoria não configurada")
         if agentic:
-            nodes = make_agentic_nodes(replace(deps, budget=AGENTIC_BUDGET))
-            yield build_graph(nodes, agentic=True), deps.audit
-        else:
-            yield build_graph(make_nodes(deps)), deps.audit
+            deps = replace(deps, budget=AGENTIC_BUDGET)
+        nodes = make_agentic_nodes(deps) if agentic else make_nodes(deps)
+        if next_step:
+            nodes = with_next_step(nodes, deps)
+        yield build_graph(nodes, agentic=agentic, next_step=next_step), audit
 
 
 @asynccontextmanager

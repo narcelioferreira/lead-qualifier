@@ -1,6 +1,7 @@
 """Qualifica leads do dataset com o grafo real e mostra o resultado gravado na auditoria.
 
-Uso: `uv run python scripts/qualify.py L024 L005` (com `--crm`, grava no HubSpot). Exige o
+Uso: `uv run python scripts/qualify.py L024 L005` (com `--crm`, grava no HubSpot; com
+`--next-step --prompt-version v4`, sugere o próximo passo com RAG). Exige o
 servidor MCP no ar (`docker compose up -d tools-mcp`). Gasta créditos da Tavily (com cache) e
 tokens da Groq. Use só leads do split **dev**: o split test é reservado às avaliações.
 """
@@ -15,7 +16,12 @@ from evals.dataset import load_dataset
 
 
 async def main(
-    ids: list[str], *, crm: bool = False, prompt_version: str = "v2", agentic: bool = False
+    ids: list[str],
+    *,
+    crm: bool = False,
+    prompt_version: str = "v2",
+    agentic: bool = False,
+    next_step: bool = False,
 ) -> int:
     items = {item.id: item for item in load_dataset()}
     for lead_id in ids:
@@ -24,11 +30,12 @@ async def main(
         if items[lead_id].split != "dev":
             raise SystemExit(f"{lead_id} é do split test, reservado às avaliações (T16+)")
     async with production_graph(
-        get_settings(), prompt_version=prompt_version, write_crm=crm, agentic=agentic
-    ) as (
-        graph,
-        audit,
-    ):
+        get_settings(),
+        prompt_version=prompt_version,
+        write_crm=crm,
+        agentic=agentic,
+        next_step=next_step,
+    ) as (graph, audit):
         for lead_id in ids:
             run_id = str(uuid.uuid4())
             raw = items[lead_id].to_lead_input().model_dump(mode="json")
@@ -53,6 +60,12 @@ async def main(
                 )
                 print(f"perfil={state['profile'].model_dump(mode='json')}")
                 print(f"justificativa: {result.rationale}")
+                if result.next_step:
+                    step = result.next_step
+                    print(f"próximo passo: {step.action} ({step.owner}, SLA {step.sla_hours} h)")
+                    for point in step.talking_points:
+                        print(f"  - {point}")
+                    print(f"  citações: {step.kb_citations}")
             print(f"crm={state.get('crm', '(desligado)')}")
             print(f"erros={state.get('errors', [])}")
             print(
@@ -70,9 +83,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--agentic", action="store_true", help="pesquisa agêntica da T25 (use --prompt-version v3)"
     )
+    parser.add_argument(
+        "--next-step", action="store_true", help="próximo passo com RAG da T26 (use v4)"
+    )
     args = parser.parse_args()
     raise SystemExit(
         asyncio.run(
-            main(args.ids, crm=args.crm, prompt_version=args.prompt_version, agentic=args.agentic)
+            main(
+                args.ids,
+                crm=args.crm,
+                prompt_version=args.prompt_version,
+                agentic=args.agentic,
+                next_step=args.next_step,
+            )
         )
     )

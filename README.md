@@ -42,7 +42,8 @@ Esse desenho já se mostrou útil na prática. Numa execução real, um lead com
 | F. RAG agêntico | T23: base de conhecimento (21 documentos fictícios com metadados validados) | ✅ |
 | | T24: ingestão no pgvector e tool `search_knowledge_base` (hit rate@3 de 100% em 10 perguntas) | ✅ |
 | | T25: pesquisa agêntica (avalia a suficiência e reformula a busca, até 3 iterações, com teto de tokens) | ✅ |
-| | T26–T27: próximo passo com RAG e avaliação | ⏳ |
+| | T26: próximo passo com RAG (citação de `doc_id` conferida pelo código) e LLM-as-judge (concordância de 9/10 com a revisão cega do autor) | ✅ |
+| | T27: avaliação da configuração `rag` | ⏳ |
 | G. SLM e roteamento | T28–T31: guardrail com SLM, roteamento de modelos, revisão humana | ⏳ |
 
 O plano completo, com os 36 passos e seus critérios de aceite, está em [`docs/04-plano-de-tasks.md`](docs/04-plano-de-tasks.md).
@@ -77,7 +78,9 @@ flowchart LR
 
 O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd), e um teste falha se ele ficar desatualizado.
 
-**Pesquisa agêntica (T25, opcional):** com `agentic=True`, o `research` vira `agentic_research`, um loop ([`docs/grafo-agentico.mmd`](docs/grafo-agentico.mmd)). A cada iteração, o mini diz quais fatos ainda faltam (setor, porte, região) e propõe uma nova consulta. **O código decide** se o loop continua: no máximo 3 iterações (conferidas também pelo roteador), um teto de tokens para a pesquisa, consulta validada (sem links, e-mails, tags nem repetição) e, com injeção detectada, o planejador nem é chamado. O site só é lido no domínio declarado pelo lead. A arquitetura-alvo, com guardrail, RAG, roteamento, revisão humana e CRM, está em [`docs/00-arquitetura.md`](docs/00-arquitetura.md).
+**Pesquisa agêntica (T25, opcional):** com `agentic=True`, o `research` vira `agentic_research`, um loop ([`docs/grafo-agentico.mmd`](docs/grafo-agentico.mmd)). A cada iteração, o mini diz quais fatos ainda faltam (setor, porte, região) e propõe uma nova consulta. **O código decide** se o loop continua: no máximo 3 iterações (conferidas também pelo roteador), um teto de tokens para a pesquisa, consulta validada (sem links, e-mails, tags nem repetição) e, com injeção detectada, o planejador nem é chamado. O site só é lido no domínio declarado pelo lead.
+
+**Próximo passo com RAG (T26, opcional):** com `next_step=True` (prompts `v4`), o `suggest_next_step` entra entre o `compute_score` e o `write_to_crm` ([`docs/grafo-rag.mmd`](docs/grafo-rag.mmd)). O código busca na base o playbook do tier e até 2 cases do tier e do setor da ontologia, mais a seção de resultados de cada case, e fixa o responsável e o prazo pelo tier. O mini só redige a ação e até 3 argumentos e cita os `doc_id`. **O código confere:** só vale citação de documento recuperado na execução, e um número que não está nos documentos nem no lead derruba o argumento (ou troca a ação pela padrão do playbook). O tier D recebe o encaminhamento do playbook pelo motivo da regra eliminatória, sem LLM. A qualidade é medida por um LLM-as-judge (`evals/judge.py`), conferido com uma revisão cega do autor. A arquitetura-alvo, com guardrail, RAG, roteamento, revisão humana e CRM, está em [`docs/00-arquitetura.md`](docs/00-arquitetura.md).
 
 ---
 
@@ -229,9 +232,9 @@ O modelo de ameaças completo, o mapeamento AST, os testes por controle e os ris
 | **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres, Ollama e MCP só em `127.0.0.1`. **Chaves da Tavily e do HubSpot isoladas no container de tools**, que exige Bearer token; chave de serviço do HubSpot com escopos mínimos. `X-API-Key` na API, comparada em tempo constante | — |
 | **ASI04 · Supply Chain** · AST02, AST07 | `uv.lock` com hashes, pip-audit, bandit e detect-secrets. **Actions fixadas por SHA**, **imagens por digest** e Dependabot. **Prompts e configuração com SHA-256** (`integrity.lock.json`): versão publicada é imutável e o agente **recusa iniciar** se algo divergir | — |
 | **ASI05 · Code Execution** · AST04 | Nenhuma ferramenta executa código; a saída do LLM é só JSON validado; YAML com `safe_load` | — |
-| **ASI06 · Context Poisoning** | Cache só de sucessos, com texto sanitizado; o detector de injeção roda **a cada execução**, inclusive sobre conteúdo vindo do cache. **Base de conhecimento curada:** todo documento passa pelo detector de injeção e é recusado se tiver caracteres invisíveis, HTML, links ou dados pessoais | Isolamento dos chunks do RAG no prompt (T26) |
+| **ASI06 · Context Poisoning** | Cache só de sucessos, com texto sanitizado; o detector de injeção roda **a cada execução**, inclusive sobre conteúdo vindo do cache. **Base de conhecimento curada:** todo documento passa pelo detector de injeção e é recusado se tiver caracteres invisíveis, HTML, links ou dados pessoais. No próximo passo, cada trecho recuperado passa **de novo** pelo detector, e só vale citação de documento recuperado na execução | — |
 | **ASI08 · Cascading Failures** · AST08 | **Orçamento por execução** (chamadas ao LLM, tokens e tempo), retries limitados, falhas de ferramenta sem derrubar a execução, disjuntor no runner e fail closed. **Loop agêntico** com até 3 iterações e teto de tokens | — |
-| **ASI09 · Human Trust** | **Saída saneada antes de sair do agente:** a justificativa que vai ao CRM perde HTML, links fora das evidências e caracteres invisíveis. Confiança calculada em código, nunca autodeclarada | Revisão humana com `interrupt()` (T31) |
+| **ASI09 · Human Trust** | **Saída saneada antes de sair do agente:** a justificativa e o próximo passo que vão ao CRM perdem HTML, links fora das evidências e caracteres invisíveis. Confiança calculada em código, nunca autodeclarada. No próximo passo, responsável e prazo vêm do código, e número sem fonte é descartado | Revisão humana com `interrupt()` (T31) |
 | **ASI10 · Rogue Agents** · AST09 | Grafo com arestas fixas, tier pelo código e auditoria completa (`agent_runs`/`agent_steps`) com o digest da configuração. No loop agêntico, o LLM propõe e **o código decide** se continua, com teto fixo no roteador; cada iteração fica na auditoria | — |
 
 **Dados pessoais (LGPD):**
@@ -290,6 +293,9 @@ make check                              # gate completo: lint, tipos, testes, se
 uv run pytest -m integration            # testes contra serviços reais (Groq, Tavily, Ollama, Postgres)
 uv run python scripts/qualify.py L024   # qualifica um lead do split dev e mostra o resultado auditado
 uv run python scripts/qualify.py --agentic --prompt-version v3 L002   # com a pesquisa agêntica (T25)
+uv run python scripts/qualify.py --next-step --prompt-version v4 L024 # com o próximo passo com RAG (T26)
+uv run python -m evals.judge run L024 L038   # gera o próximo passo e julga com o LLM-as-judge (dev)
+uv run python -m evals.judge agreement       # concordância do judge com a revisão do autor
 uv run python -m evals.run --split dev --config mvp   # avaliação (retomável com --resume)
 uv run python -m evals.kb_eval          # hit rate@3 da busca na base de conhecimento
 docker compose up -d --build tools-mcp  # servidor MCP lead-tools em http://127.0.0.1:8001/mcp (Bearer TOOLS_MCP_TOKEN)

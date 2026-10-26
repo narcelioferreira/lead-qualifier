@@ -94,6 +94,7 @@ def build_result(state: QualificationState) -> QualificationResult:
         disqualifiers=list(score.disqualifiers),
         caps_applied=list(score.caps_applied),
         criteria=list(score.breakdown),
+        next_step=state.get("next_step"),
         rationale=state.get("rationale", ""),
         prompt_version=state.get("prompt_version", PROMPT_VERSION),
         cost_usd=float(cost),

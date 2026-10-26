@@ -37,6 +37,7 @@ from app.schemas import Evidence, EvidenceSource, LeadInput, QualificationResult
 from app.security.injection import InjectionHit, scan_sources
 from app.security.output import sanitize_rationale
 from tools_mcp.base import ToolError
+from tools_mcp.kb import DEFAULT_K, KBFilters, KBSearchResult
 from tools_mcp.search import SearchResult
 from tools_mcp.site import SiteContent
 
@@ -54,6 +55,12 @@ class Searcher(Protocol):
 
 class SiteReader(Protocol):
     async def fetch(self, domain: str) -> SiteContent: ...
+
+
+class KnowledgeBase(Protocol):
+    async def search_knowledge_base(
+        self, query: str, filters: KBFilters | None = None, k: int = DEFAULT_K
+    ) -> KBSearchResult: ...
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,8 @@ class MvpDeps:
     audit: AuditRepository | None = None
     # `None` desliga o CRM (avaliações): o nó `write_to_crm` só registra que não gravou.
     crm: CrmWriter | None = None
+    # Base de conhecimento (T26), exigida só pelo `suggest_next_step`.
+    kb: KnowledgeBase | None = None
     model_key: str = "groq-mini"
     prompt_version: str = "v1"
     # Digest da configuração verificada (app/integrity.py), gravado em cada execução.

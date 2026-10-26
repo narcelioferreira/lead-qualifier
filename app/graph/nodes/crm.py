@@ -20,7 +20,7 @@ from app.graph.builder import Node
 from app.graph.nodes.core import build_result
 from app.graph.state import QualificationState
 from app.ontology.models import Criterion
-from app.schemas import QualificationResult
+from app.schemas import NextStep, QualificationResult
 from tools_mcp.base import ToolError
 from tools_mcp.hubspot import AiFields, CompanyProps, ContactProps, UpsertResult
 
@@ -60,6 +60,12 @@ def should_write(state: QualificationState) -> bool:
     return state.get("status") not in {"rejected", "failed"} and "score" in state
 
 
+def next_step_text(step: NextStep) -> str:
+    """Resumo de uma linha para a propriedade `ai_next_step` (até 1.000 caracteres)."""
+    sla = f"em até {step.sla_hours} h úteis" if step.sla_hours else "sem prazo comercial"
+    return f"{step.action} Responsável: {step.owner}, {sla}."[:1000]
+
+
 def note_text(state: QualificationState, result: QualificationResult) -> str:
     """Justificativa por critério, em texto puro (o cliente HubSpot escapa o HTML)."""
     header = [
@@ -78,14 +84,20 @@ def note_text(state: QualificationState, result: QualificationResult) -> str:
         f"({c.points:g}/{c.max_points:g})"
         for c in result.criteria
     ]
-    return "\n\n".join(
-        [
-            "\n".join(header),
-            "\n".join(criteria),
-            f"Justificativa: {result.rationale or '(indisponível)'}",
-            f"run_id {result.run_id} · prompt {result.prompt_version}",
-        ]
-    )
+    sections = [
+        "\n".join(header),
+        "\n".join(criteria),
+        f"Justificativa: {result.rationale or '(indisponível)'}",
+    ]
+    if result.next_step is not None:
+        step = result.next_step
+        lines = [f"Próximo passo: {next_step_text(step)}"]
+        lines += [f"- {point}" for point in step.talking_points]
+        if step.kb_citations:
+            lines.append(f"Fontes (base de conhecimento): {', '.join(step.kb_citations)}")
+        sections.append("\n".join(lines))
+    sections.append(f"run_id {result.run_id} · prompt {result.prompt_version}")
+    return "\n\n".join(sections)
 
 
 def _ai_fields(result: QualificationResult, qualified_at: datetime) -> dict[str, Any]:
@@ -93,6 +105,7 @@ def _ai_fields(result: QualificationResult, qualified_at: datetime) -> dict[str,
         ai_fit_tier=result.tier,
         ai_fit_score=result.score,
         ai_confidence=result.confidence,
+        ai_next_step=next_step_text(result.next_step) if result.next_step else None,
         ai_run_id=result.run_id,
         ai_prompt_version=result.prompt_version,
         ai_qualified_at=qualified_at,

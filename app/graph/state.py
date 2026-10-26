@@ -10,7 +10,8 @@ from typing import Annotated, Any, Literal, TypedDict
 from app.audit.repository import StepRecord
 from app.ontology.models import LeadProfile
 from app.ontology.scoring import ScoreResult
-from app.schemas import Evidence, LeadInput, QualificationResult
+from app.schemas import Evidence, LeadInput, NextStep, QualificationResult
+from tools_mcp.kb import KBHit
 
 PROMPT_VERSION = "v1"
 
@@ -43,6 +44,9 @@ class QualificationState(GraphInput, total=False):
     rationale: str
     confidence: float
     score: ScoreResult
+    # Próximo passo (T26) e os trechos da base que o sustentam (só os recuperados nesta execução).
+    next_step: NextStep
+    kb_hits: list[KBHit]
     result: QualificationResult
     # Ids gravados no HubSpot pelo `write_to_crm` (company_id, contact_id, note_id).
     crm: dict[str, str]

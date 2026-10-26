@@ -86,7 +86,7 @@ audit_log ─► END
 | `assess_criteria` | router | Perfil + evidências citadas → **justificativa** em linguagem natural com citações (`E1`, `E2`...). Não altera valores nem pontua |
 | `compute_score` | código | Soma ponderada → score → tier. Aplica regras eliminatórias (concorrente, estudante, fornecedor) |
 | `human_review` | — | `interrupt()` do LangGraph. Retomado via `POST /v1/runs/{id}/review` |
-| `suggest_next_step` | mini | Tier + perfil → ação, canal, prazo e argumento, buscando no playbook e nos cases (RAG) com citação do documento |
+| `suggest_next_step` | mini | Tier + perfil → ação, canal, prazo e argumento, buscando no playbook e nos cases (RAG) com citação do documento. **Decisões da T26:** o código recupera o playbook do tier e até 2 cases (tier e setor da ontologia), mais a seção "Resultados em 6 meses" de cada case, e fixa responsável e prazo pelo tier; o mini redige ação e até 3 argumentos e cita `doc_id`; o código descarta citação de documento não recuperado e número sem fonte. Tier D e falhas: passo padrão do playbook, sem LLM |
 | `write_to_crm` | — | Upsert de company e contact, associação entre eles, propriedades `ai_*` e Note com a justificativa. Idempotente por `run_id` |
 | `audit_log` | — | Persiste a execução completa em `agent_runs` e `agent_steps` |
 
@@ -134,7 +134,7 @@ Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e cu
 - **Ingestão:** `scripts/ingest_kb.py`, com chunking por seção, embeddings locais no Ollama (`nomic-embed-text:v1.5`; a Groq não oferece embeddings), armazenamento no pgvector e metadados `{doc_type, sector, tier}`.
 - **Recuperação:** busca híbrida (vetorial + filtro por metadado de tipo, tier, setor e segmento) e top-k com citação, com um resultado por documento. A busca é exata (sem índice ANN): com ~100 chunks ela é instantânea e tem recall de 100%; um HNSW só compensa com dezenas de milhares de chunks.
 - **Setor dos documentos:** cada documento declara o segmento (`transporte_cargas`, `distribuicao`...), e o `SectorFit` do filtro sai do CNAE do segmento pela mesma taxonomia que classifica o lead (T23).
-- **Comportamento agêntico:** no `agentic_research`, o agente escolhe a fonte (web, site da empresa ou base interna) e avalia a suficiência da evidência. No `suggest_next_step`, recupera o playbook e os cases filtrados pelo setor da ontologia.
+- **Comportamento agêntico:** no `agentic_research`, o agente escolhe a consulta e avalia a suficiência da evidência (a base interna ficou fora da pesquisa, decisão da T25). No `suggest_next_step`, recupera o playbook e os cases filtrados pelo tier e pelo setor da ontologia e, para cada case, a seção de resultados (sem ela, o mini confundia o problema do cliente com o resultado, achado da T26).
 - Nenhum lead do conjunto de teste entra na base, para evitar vazamento na avaliação.
 
 ---
