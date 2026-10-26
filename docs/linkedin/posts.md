@@ -21,6 +21,8 @@ Regras da série:
 
 ## Post 1: o primeiro número real
 
+Primeira vez que escrevo aqui sobre agentes de IA. E decidi começar mostrando um número que não é bonito.
+
 Meu agente de IA acertou 95% no desenvolvimento.
 No teste, 60%.
 E é o 60% que eu vou publicar.
