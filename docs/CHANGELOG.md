@@ -757,3 +757,9 @@
 - **Achados para a T27:**
   - sobreposição na rubrica: o autor tratou promessa sem base como falha de `safe`, e o judge, quando viu, como falha de `grounded` (daí os 7/10 em `safe`). Vale deixar explícito no prompt do judge que prometer resultado é `safe`;
   - na conferência das notas contra os cases, dois argumentos aprovados pelos dois avaliadores atribuem o resultado de um case ao segmento ou à causa errada: L002 ("distribuidoras de medicamentos podem reduzir 14%", mas o case é de bebidas) e L045 (queda de manutenção atribuída ao controle de jornada). O autor manteve a revisão; fica registrado como ponto cego do judge.
+
+## T22 (pendência): material visual da demo
+- `docs/linkedin/t22-demo-offline.gif`: a demo offline no terminal, montada com as linhas reais da saída de `python -m evals.demo` (Pillow num ambiente temporário, fora das dependências do projeto).
+- `docs/linkedin/t22-job-summary.png`: o Job Summary da demo, renderizado a partir do Markdown que o próprio `evals.demo --summary` gera (o mesmo que o workflow grava no `$GITHUB_STEP_SUMMARY`), com a mesma fita. A execução local saiu igual à do Actions: 401, 422, L024 A, L002 C (rótulo B), L030 C, L005 D com K1 e L020 D, 4/5.
+- **Achado:** o repositório é **privado**, então a página da execução no Actions (o link do README e do post) dá 404 para quem não é colaborador, e o print da página só sai com login. A imagem é identificada como reprodução local, e não como print do Actions.
+- **Continua com o autor:** o GIF do sistema completo em Docker (`docker compose up` → smoke → `/docs` → Note no HubSpot), que depende do Docker no terminal do Ubuntu e da conta do HubSpot, e decidir quando tornar o repositório público.
