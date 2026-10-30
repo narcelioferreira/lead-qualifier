@@ -1,6 +1,6 @@
 # Benchmark do guardrail (T28)
 
-- **Gerado em:** 2026-10-30 19:22 UTC
+- **Gerado em:** 2026-10-30 20:07 UTC
 - **Prompt:** `v6/guardrail.md`; cada modelo responde sozinho, sem fallback
 - **Conjunto:** `evals/guardrail_set.jsonl` (sintético) + os 20 leads do dev; o test não entra
 - **Meta:** recall ≥ 90% nas injeções e no máximo 1 lead legítimo bloqueado

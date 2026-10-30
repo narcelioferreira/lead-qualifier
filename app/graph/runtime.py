@@ -22,6 +22,7 @@ from app.graph.nodes.research import AGENTIC_BUDGET, make_agentic_nodes
 from app.llm.groq_client import GroqClient
 from app.llm.ollama_client import OllamaClient
 from app.mcp_client import connect
+from app.routing.policy import ROUTING_CALLS, ROUTING_TOKENS, RoutingPolicy
 
 # SLM de reserva do guardrail em CPU: p95 de ~26 s no benchmark (qwen3:4b), mais a carga do
 # modelo na 1ª chamada. Conexão recusada (Ollama desligado) falha logo.
@@ -63,12 +64,15 @@ async def production_graph(
     agentic: bool = False,
     next_step: bool = False,
     guardrail: bool = False,
+    routing: bool = False,
 ) -> AsyncIterator[tuple[CompiledGraph, AuditRepository]]:
     """Grafo do MVP com dependências reais, mais o repositório de auditoria.
 
     `agentic=True` troca a pesquisa pelo loop da T25 (exige prompts `v3` ou mais novos) e amplia
     o orçamento. `next_step=True` acrescenta o próximo passo com RAG da T26 (exige `v4`).
     `guardrail=True` acrescenta o guardrail da T28 (mini, com SLM de reserva; exige `v6`).
+    `routing=True` liga a política de roteamento da T29 (fallback entre modelos e escalonamento
+    da extração para o modelo maior).
     """
     async with production_deps(
         settings, prompt_version=prompt_version, write_crm=write_crm
@@ -80,6 +84,9 @@ async def production_graph(
             deps = replace(deps, budget=AGENTIC_BUDGET)
         if guardrail:
             deps = replace(deps, budget=guardrail_budget(deps.budget))
+        if routing:
+            policy_budget = deps.budget.plus(ROUTING_CALLS, ROUTING_TOKENS)
+            deps = replace(deps, policy=RoutingPolicy(), budget=policy_budget)
         nodes = make_agentic_nodes(deps) if agentic else make_nodes(deps)
         if next_step:
             nodes = with_next_step(nodes, deps)

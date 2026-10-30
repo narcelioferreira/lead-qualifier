@@ -23,7 +23,6 @@ Se o mini e o SLM falharem, o lead **segue** para a pesquisa (fail open), com o 
 as regras e a flag de injeção do `normalize` continuam valendo depois.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from string import Template
 from typing import Any
@@ -36,6 +35,7 @@ from app.graph.state import QualificationState
 from app.llm.base import Message, StructuredLLM
 from app.ontology.models import LeadFlag, LeadProfile
 from app.prompts import new_nonce, untrusted
+from app.routing.policy import RoutingPolicy
 from app.schemas import LeadInput, sanitize_text
 from app.security.guardrail import REASON_CHARS, GuardrailVerdict
 from app.security.injection import scan_sources
@@ -99,27 +99,20 @@ async def check(
         )
         return GuardrailCheck(None, hits, [step], [])
     messages = guardrail_messages(lead, deps.prompt("guardrail"), deps.prompt("guardrail_user"))
-    steps: list[StepRecord] = []
-    errors: list[str] = []
-    routes: Sequence[tuple[MvpDeps, str]] = (
-        (deps, PRIMARY),
-        (replace(deps, llm=slm, model_key=SLM_KEY), FALLBACK),
+    # A rota do guardrail (mini → SLM, também com saída inválida) vale com ou sem a política
+    # completa da T29: é a decisão do ADR 0006.
+    policy = deps.policy or RoutingPolicy()
+    result, steps, errors = await _ask(
+        replace(deps, slm=slm), state, NODE, messages, GuardrailVerdict, policy=policy
     )
-    for route_deps, reason in routes:
-        # O state "visto" pelo orçamento inclui os passos desta checagem.
-        seen: QualificationState = {**state, "steps": [*state.get("steps", []), *steps]}
-        result, tried, failed = await _ask(route_deps, seen, NODE, messages, GuardrailVerdict)
-        steps += tried
-        errors += failed
-        if result is not None:
-            verdict = result.parsed.model_copy(
-                update={"reason": sanitize_text(result.parsed.reason)[:REASON_CHARS]}
-            )
-            steps.append(
-                StepRecord.from_llm(NODE, replace(result, parsed=verdict), route_reason=reason)
-            )
-            return GuardrailCheck(verdict, [], steps, errors)
-    return GuardrailCheck(None, [], steps, [*errors, f"{NODE}: mini e SLM de reserva falharam"])
+    if result is None:
+        return GuardrailCheck(None, [], steps, [*errors, f"{NODE}: mini e SLM de reserva falharam"])
+    verdict = result.parsed.model_copy(
+        update={"reason": sanitize_text(result.parsed.reason)[:REASON_CHARS]}
+    )
+    reason = PRIMARY if result.model_key == policy.primary(NODE) else FALLBACK
+    steps.append(StepRecord.from_llm(NODE, replace(result, parsed=verdict), route_reason=reason))
+    return GuardrailCheck(verdict, [], steps, errors)
 
 
 def blocked_update(result: GuardrailCheck, prompt_version: str) -> dict[str, Any]:
@@ -156,11 +149,7 @@ def make_guardrail(deps: MvpDeps, slm: StructuredLLM) -> Node:
 
 def guardrail_budget(budget: RunBudget) -> RunBudget:
     """Orçamento da execução com a folga do guardrail somada."""
-    return replace(
-        budget,
-        max_llm_calls=budget.max_llm_calls + GUARDRAIL_CALLS,
-        max_tokens=budget.max_tokens + GUARDRAIL_TOKENS,
-    )
+    return budget.plus(GUARDRAIL_CALLS, GUARDRAIL_TOKENS)
 
 
 def with_guardrail(nodes: GraphNodes, deps: MvpDeps, slm: StructuredLLM) -> GraphNodes:

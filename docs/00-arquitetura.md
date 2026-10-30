@@ -57,10 +57,10 @@ agentic_research ◄──────┐   (loop: planeja busca → web/site/KB
   │                     │    suficiência da evidência; máx. 3 iterações)    │
   ├──(insuficiente)─────┘                                                   │
   ▼                                                                         │
-normalize_to_ontology [mini]   (evidências → conceitos da ontologia + fonte)│
+normalize_to_ontology [router: mini → maior] (critérios + fonte)            │
   │                                                                         │
   ▼                                                                         │
-assess_criteria [router: mini → maior]  (nível por critério + evidência)    │
+assess_criteria [mini]  (justificativa com citação das evidências)          │
   │                                                                         │
   ▼                                                                         │
 compute_score [Python determinístico]  (pesos → score 0-100 → tier A/B/C/D) │
@@ -117,15 +117,20 @@ DisqualifierRule: concorrente | estudante/pesquisa | fornecedor vendendo | spam
 ## 4. LLM Routing (política determinística e auditável)
 Ficam em `app/routing/policy.py` e `models.yaml` (modelos com versão fixada e preço por 1M tokens).
 
-| Etapa | Rota padrão | Escala para | Gatilho de escalonamento |
+| Etapa | Rota padrão | Reserva (fallback) | Escalonamento |
 |---|---|---|---|
-| guardrail | mini | SLM local (`qwen3:4b`) | mini indisponível ou saída inválida (T28, ADR 0006) |
-| research / normalize | mini | — | — |
-| assess_criteria | mini | modelo maior | confiança < 0,7, critérios conflitantes ou tier na fronteira (±5 pts) |
-| next_step | mini | — | — |
-| qualquer etapa | — | fallback | erro 5xx ou 429 após retries → modelo alternativo |
+| guardrail | mini | SLM local (`qwen3:4b`): mini indisponível **ou** saída inválida 2× (T28, ADR 0006) | — |
+| agentic_research | mini | modelo maior | — |
+| normalize (nível de cada critério) | mini | modelo maior | **refaz a extração no modelo maior** quando a confiança do perfil < 0,7 ou o score está a ±5 pontos de um limite de tier (`ScoreResult.is_borderline`); se o maior falhar, fica a extração do mini |
+| assess (justificativa) | mini | modelo maior | — (a justificativa não muda o score) |
+| suggest_next_step | mini | modelo maior | — |
 
-Cada decisão é gravada em `routing_decisions[]` com etapa, modelo, motivo e custo. A política é feita de regras, sem LLM-router, porque assim fica barata, testável e explicável.
+- **Fallback:** só depois dos retries do cliente (429, 5xx, timeout ou rede). Requisição rejeitada (outros 4xx) não troca de modelo. Saída inválida troca só no guardrail.
+- **Decisão da T29:** o plano punha o escalonamento no `assess_criteria`. No código, quem decide o nível de cada critério é o `normalize`, e o `assess` só escreve a justificativa; escalar a justificativa não mudaria nenhum tier. Por isso o escalonamento refaz a **extração**.
+- **Registro:** cada decisão vira um passo da auditoria (`route_reason` começando por `roteamento:`), e o `audit_log` grava `routing_decisions` (etapa, modelo e motivo de cada chamada, em ordem) no próprio passo; o custo fica em cada passo de modelo. Sem política (`policy=None`), o grafo se comporta como nas avaliações anteriores.
+- **Orçamento:** a política soma 2 chamadas e 16K tokens ao orçamento da execução.
+
+A política é feita de regras, sem LLM-router, porque assim fica barata, testável e explicável.
 
 ---
 

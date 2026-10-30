@@ -2,7 +2,8 @@
 
 Uso: `uv run python scripts/qualify.py L024 L005` (com `--crm`, grava no HubSpot; com
 `--next-step --prompt-version v4`, sugere o próximo passo com RAG; com
-`--guardrail --prompt-version v6`, passa antes pelo guardrail no mini, com SLM de reserva). Exige o
+`--guardrail --prompt-version v6`, passa antes pelo guardrail no mini, com SLM de reserva; com
+`--routing`, liga a política de roteamento da T29). Exige o
 servidor MCP no ar (`docker compose up -d tools-mcp`). Gasta créditos da Tavily (com cache) e
 tokens da Groq. Use só leads do split **dev**: o split test é reservado às avaliações.
 """
@@ -24,6 +25,7 @@ async def main(
     agentic: bool = False,
     next_step: bool = False,
     guardrail: bool = False,
+    routing: bool = False,
 ) -> int:
     items = {item.id: item for item in load_dataset()}
     for lead_id in ids:
@@ -38,6 +40,7 @@ async def main(
         agentic=agentic,
         next_step=next_step,
         guardrail=guardrail,
+        routing=routing,
     ) as (graph, audit):
         for lead_id in ids:
             run_id = str(uuid.uuid4())
@@ -59,6 +62,9 @@ async def main(
                     f"veredito={verdict.model_dump() if verdict else '-'} "
                     f"rota={route.model_key or route.route_reason if route else '-'}"
                 )
+            if routing:
+                for decision in state.get("routing_decisions", []):
+                    print(f"rota: {decision}")
             if agentic:
                 print(
                     f"pesquisa: {state.get('research_iterations', 0)} iteração(ões), "
@@ -98,6 +104,9 @@ if __name__ == "__main__":
         "--next-step", action="store_true", help="próximo passo com RAG da T26 (use v4)"
     )
     parser.add_argument("--guardrail", action="store_true", help="guardrail da T28 (use v6)")
+    parser.add_argument(
+        "--routing", action="store_true", help="política de roteamento da T29 (fallback e escala)"
+    )
     args = parser.parse_args()
     raise SystemExit(
         asyncio.run(
@@ -108,6 +117,7 @@ if __name__ == "__main__":
                 agentic=args.agentic,
                 next_step=args.next_step,
                 guardrail=args.guardrail,
+                routing=args.routing,
             )
         )
     )

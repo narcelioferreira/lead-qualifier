@@ -54,6 +54,8 @@ class QualificationState(GraphInput, total=False):
     result: QualificationResult
     # Ids gravados no HubSpot pelo `write_to_crm` (company_id, contact_id, note_id).
     crm: dict[str, str]
+    # Rota de cada chamada de modelo e decisões da política (T29), montadas pelo `audit_log`.
+    routing_decisions: list[dict[str, Any]]
     steps: Annotated[list[StepRecord], operator.add]
     errors: Annotated[list[str], operator.add]
 

@@ -9,7 +9,7 @@ import json
 import time
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from string import Template
 from typing import Any, Protocol
@@ -29,10 +29,19 @@ from app.graph.nodes.extraction import (
     to_profile,
 )
 from app.graph.state import QualificationState
-from app.llm.base import LLMError, LLMOutputError, LLMResult, Message, StructuredLLM
+from app.llm.base import (
+    LLMError,
+    LLMOutputError,
+    LLMResult,
+    LLMUnavailableError,
+    Message,
+    StructuredLLM,
+)
 from app.ontology.models import LeadFlag, LeadProfile
+from app.ontology.scoring import compute_score as score_profile
 from app.prompts import load_prompt, new_nonce, untrusted
 from app.routing.cost import ModelSpec, get_catalog
+from app.routing.policy import RoutingPolicy, decisions_from_steps
 from app.schemas import Evidence, EvidenceSource, LeadInput, QualificationResult, Tier
 from app.security.injection import InjectionHit, scan_sources
 from app.security.output import sanitize_rationale
@@ -75,6 +84,12 @@ class RunBudget:
     max_tokens: int = 24_000
     max_seconds: float = 300.0
 
+    def plus(self, calls: int, tokens: int) -> "RunBudget":
+        """Orçamento com folga para etapas extras (guardrail, escalonamento)."""
+        return replace(
+            self, max_llm_calls=self.max_llm_calls + calls, max_tokens=self.max_tokens + tokens
+        )
+
     def exceeded(self, steps: Sequence[StepRecord], started_at: float | None) -> str | None:
         """Motivo do estouro, ou `None` se ainda há orçamento para mais uma chamada."""
         calls = sum(
@@ -106,10 +121,23 @@ class MvpDeps:
     # Digest da configuração verificada (app/integrity.py), gravado em cada execução.
     config_digest: str | None = None
     budget: RunBudget = field(default_factory=RunBudget)
+    # SLM local (Ollama), reserva do guardrail (T28).
+    slm: StructuredLLM | None = None
+    # Política de roteamento (T29). `None` mantém o comportamento das configurações já
+    # avaliadas: só o `model_key`, sem fallback nem escalonamento.
+    policy: RoutingPolicy | None = None
 
     @property
     def spec(self) -> ModelSpec:
         return get_catalog().get(self.model_key)
+
+    def client_for(self, spec: ModelSpec) -> StructuredLLM:
+        """Cliente do provedor do modelo: Groq em `llm`, Ollama em `slm`."""
+        if spec.provider == "ollama":
+            if self.slm is None:
+                raise LLMUnavailableError(f"{spec.key}: SLM local não configurado")
+            return self.slm
+        return self.llm
 
     def prompt(self, name: str) -> Template:
         return load_prompt(name, self.prompt_version)
@@ -165,32 +193,66 @@ def _evidence_block(evidence: Sequence[Evidence], ids: Sequence[str], nonce: str
     return "\n\n".join(blocks)
 
 
+async def _ask_model[T: BaseModel](
+    deps: MvpDeps,
+    state: QualificationState,
+    node: str,
+    messages: list[Message],
+    schema: type[T],
+    model_key: str,
+) -> tuple[LLMResult[T] | None, list[StepRecord], list[str], LLMError | None]:
+    """Um modelo, com 1 nova tentativa para saída fora do schema. Devolve também o último erro."""
+    spec = get_catalog().get(model_key)
+    steps: list[StepRecord] = []
+    for attempt in (1, 2):
+        exceeded = deps.budget.exceeded([*state.get("steps", []), *steps], state.get("started_at"))
+        if exceeded:
+            return None, steps, [f"{node}: orçamento da execução excedido ({exceeded})"], None
+        try:
+            result = await deps.client_for(spec).structured(spec, messages, schema)
+        except LLMOutputError as exc:
+            steps.append(StepRecord(node=node, route_reason=f"tentativa {attempt}: {exc}"[:300]))
+            messages = [*messages, Message(role="user", content=RETRY_NOTICE)]
+            last: LLMError = exc
+            continue
+        except LLMError as exc:
+            return None, steps, [f"{node}: {exc}"], exc
+        return result, steps, [], None
+    return None, steps, [f"{node}: saída do LLM inválida após 2 tentativas"], last
+
+
 async def _ask[T: BaseModel](
     deps: MvpDeps,
     state: QualificationState,
     node: str,
     messages: list[Message],
     schema: type[T],
+    *,
+    model_key: str | None = None,
+    policy: RoutingPolicy | None = None,
 ) -> tuple[LLMResult[T] | None, list[StepRecord], list[str]]:
     """Chama o LLM com 1 nova tentativa para saída fora do schema. Nunca levanta.
 
-    Antes de cada chamada confere o orçamento da execução (ASI08): estourou, não chama.
+    Antes de cada chamada confere o orçamento da execução (ASI08): estourou, não chama. Com
+    política de roteamento (T29), um modelo que falha passa a vez ao próximo da rota da etapa,
+    e a troca fica registrada como passo da auditoria.
     """
+    policy = policy or deps.policy
+    key = model_key or (policy.primary(node) if policy else deps.model_key)
     steps: list[StepRecord] = []
-    for attempt in (1, 2):
-        exceeded = deps.budget.exceeded([*state.get("steps", []), *steps], state.get("started_at"))
-        if exceeded:
-            return None, steps, [f"{node}: orçamento da execução excedido ({exceeded})"]
-        try:
-            result = await deps.llm.structured(deps.spec, messages, schema)
-        except LLMOutputError as exc:
-            steps.append(StepRecord(node=node, route_reason=f"tentativa {attempt}: {exc}"[:300]))
-            messages = [*messages, Message(role="user", content=RETRY_NOTICE)]
-            continue
-        except LLMError as exc:
-            return None, steps, [f"{node}: {exc}"]
-        return result, steps, []
-    return None, steps, [f"{node}: saída do LLM inválida após 2 tentativas"]
+    errors: list[str] = []
+    while True:
+        seen: QualificationState = {**state, "steps": [*state.get("steps", []), *steps]}
+        result, tried, failed, error = await _ask_model(deps, seen, node, messages, schema, key)
+        steps += tried
+        if result is not None:
+            return result, steps, errors
+        errors += failed
+        decision = policy.fallback(node, key, error) if policy and error else None
+        if decision is None:
+            return None, steps, errors
+        steps.append(StepRecord(node=node, route_reason=decision.reason))
+        key = decision.model_key
 
 
 def search_evidence(found: SearchResult) -> list[Evidence]:
@@ -245,6 +307,21 @@ def initial_query(lead: LeadInput) -> str:
     return f"{lead.company_name} empresa"
 
 
+def _read_extraction(
+    extraction: Extraction,
+    texts: Sequence[str],
+    evidence: Sequence[Evidence],
+    ids: Sequence[str],
+) -> tuple[LeadProfile, list[str], list[str]]:
+    """Extração do LLM → (perfil, evidências citadas que existem, URLs delas)."""
+    cited = [i for i in extraction.evidence_ids if i in ids]  # descarta ids inventados
+    if extraction.cnae and not cnae_in_evidence(extraction.cnae, texts):
+        # CNAE que não está em nenhuma evidência é alucinação: não pode decidir o setor.
+        extraction = extraction.model_copy(update={"cnae": None})
+    urls = [evidence[ids.index(i)].source_url for i in cited]
+    return to_profile(extraction), cited, [str(u) for u in urls if u is not None]
+
+
 def make_nodes(deps: MvpDeps) -> GraphNodes:
     async def research(state: QualificationState) -> dict[str, Any]:
         evidence, errors = await initial_research(deps, state["lead"])
@@ -296,24 +373,37 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
         result, steps, errors = await _ask(deps, state, "normalize", messages, Extraction)
         if result is None:
             return {"status": "failed", "errors": errors, "steps": steps}
-        extraction = result.parsed
-        cited = [i for i in extraction.evidence_ids if i in ids]  # descarta ids inventados
         texts = [_lead_text(state["lead"]), *(e.snippet for e in evidence)]
-        if extraction.cnae and not cnae_in_evidence(extraction.cnae, texts):
-            # CNAE que não está em nenhuma evidência é alucinação: não pode decidir o setor.
-            extraction = extraction.model_copy(update={"cnae": None})
-        profile = to_profile(extraction)
-        urls = [evidence[ids.index(i)].source_url for i in cited]
-        sources = [str(u) for u in urls if u is not None]
+        profile, cited, sources = _read_extraction(result.parsed, texts, evidence, ids)
+        steps.append(StepRecord.from_llm("normalize", result, sources=sources))
+
+        decision = (
+            deps.policy.escalation(
+                "normalize", result.model_key, confidence(profile), score_profile(profile)
+            )
+            if deps.policy
+            else None
+        )
+        if decision is not None:
+            # Extração incerta ou na fronteira de tier: o modelo maior refaz (T29). Se ele
+            # falhar, fica a extração do mini, com o erro registrado.
+            steps.append(StepRecord(node="normalize", route_reason=decision.reason))
+            seen: QualificationState = {**state, "steps": [*state.get("steps", []), *steps]}
+            larger, more, failed = await _ask(
+                deps, seen, "normalize", messages, Extraction, model_key=decision.model_key
+            )
+            steps += more
+            errors += failed
+            if larger is not None:
+                profile, cited, sources = _read_extraction(larger.parsed, texts, evidence, ids)
+                steps.append(StepRecord.from_llm("normalize", larger, sources=sources))
         return {
             "prompt_version": deps.prompt_version,
             "profile": profile,
             "evidence_ids": cited,
             "confidence": confidence(profile),
-            "steps": [
-                *steps,
-                StepRecord.from_llm("normalize", result, sources=sources),
-            ],
+            "steps": steps,
+            "errors": errors,
         }
 
     async def assess(state: QualificationState) -> dict[str, Any]:
@@ -353,14 +443,21 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
         return {
             "rationale": sanitize_rationale(result.parsed.rationale, _evidence_urls(evidence)),
             "steps": [*steps, StepRecord.from_llm("assess", result)],
+            "errors": errors,  # falha do modelo principal, quando a reserva respondeu (T29)
         }
 
     async def audit_log(state: QualificationState) -> dict[str, Any]:
         status, result = finalize(state)
+        routing = decisions_from_steps(state.get("steps", []))
         step = StepRecord(
-            node="audit_log", output={"status": status, "config_digest": deps.config_digest}
+            node="audit_log",
+            output={
+                "status": status,
+                "config_digest": deps.config_digest,
+                "routing_decisions": routing,
+            },
         )
-        update: dict[str, Any] = {"status": status, "steps": [step]}
+        update: dict[str, Any] = {"status": status, "steps": [step], "routing_decisions": routing}
         if result is not None:
             update["result"] = result
         if deps.audit is not None:
