@@ -46,6 +46,11 @@ def assess(state: QualificationState) -> dict[str, Any]:
     }
 
 
+def guardrail(state: QualificationState) -> dict[str, Any]:
+    """Deixa todo lead passar: a versão real (regras + mini, T28) está em `nodes/guardrail.py`."""
+    return {"steps": [StepRecord(node="guardrail", route_reason="stub: sem guardrail")]}
+
+
 def suggest_next_step(state: QualificationState) -> dict[str, Any]:
     """Sem próximo passo: a versão real (RAG, T26) está em `nodes/next_step.py`."""
     return {"steps": [StepRecord(node="suggest_next_step", route_reason="stub: sem RAG")]}

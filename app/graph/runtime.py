@@ -8,16 +8,24 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 
+import httpx
+
 from app import integrity
 from app.audit.db import create_engine, session_factory
 from app.audit.repository import AuditRepository
 from app.config import Settings
 from app.graph.builder import CompiledGraph, build_baseline_graph, build_graph
+from app.graph.nodes.guardrail import guardrail_budget, with_guardrail
 from app.graph.nodes.mvp import MvpDeps, make_baseline_nodes, make_nodes
 from app.graph.nodes.next_step import with_next_step
 from app.graph.nodes.research import AGENTIC_BUDGET, make_agentic_nodes
 from app.llm.groq_client import GroqClient
+from app.llm.ollama_client import OllamaClient
 from app.mcp_client import connect
+
+# SLM de reserva do guardrail em CPU: p95 de ~26 s no benchmark (qwen3:4b), mais a carga do
+# modelo na 1ª chamada. Conexão recusada (Ollama desligado) falha logo.
+GUARDRAIL_TIMEOUT = httpx.Timeout(60.0, connect=3.0)
 
 
 @asynccontextmanager
@@ -54,11 +62,13 @@ async def production_graph(
     write_crm: bool = False,
     agentic: bool = False,
     next_step: bool = False,
+    guardrail: bool = False,
 ) -> AsyncIterator[tuple[CompiledGraph, AuditRepository]]:
     """Grafo do MVP com dependências reais, mais o repositório de auditoria.
 
     `agentic=True` troca a pesquisa pelo loop da T25 (exige prompts `v3` ou mais novos) e amplia
     o orçamento. `next_step=True` acrescenta o próximo passo com RAG da T26 (exige `v4`).
+    `guardrail=True` acrescenta o guardrail da T28 (mini, com SLM de reserva; exige `v6`).
     """
     async with production_deps(
         settings, prompt_version=prompt_version, write_crm=write_crm
@@ -68,10 +78,16 @@ async def production_graph(
             raise RuntimeError("auditoria não configurada")
         if agentic:
             deps = replace(deps, budget=AGENTIC_BUDGET)
+        if guardrail:
+            deps = replace(deps, budget=guardrail_budget(deps.budget))
         nodes = make_agentic_nodes(deps) if agentic else make_nodes(deps)
         if next_step:
             nodes = with_next_step(nodes, deps)
-        yield build_graph(nodes, agentic=agentic, next_step=next_step), audit
+        if guardrail:
+            slm = OllamaClient(settings.ollama_base_url, timeout=GUARDRAIL_TIMEOUT)
+            nodes = with_guardrail(nodes, deps, slm)
+        graph = build_graph(nodes, agentic=agentic, next_step=next_step, guardrail=guardrail)
+        yield graph, audit
 
 
 @asynccontextmanager

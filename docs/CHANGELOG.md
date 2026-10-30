@@ -789,3 +789,28 @@
   - **porte contraditório** (test): no L003, a extração trouxe 75 funcionários e 1.430 veículos; o `to_profile` usa os funcionários primeiro (faixa 50–199, sem teto) e o lead continua A contra o gabarito B. Revisar junto com a fronteira do C4;
   - B → A do `mvp` no test: 2 de 5 corrigidos (L010, L014); L003, L009 e L023 continuam A. Spam L034 continua C em `needs_review`, nas duas configurações.
 - 📸 `docs/linkedin/t27-rag.md`.
+
+## T28: Guardrail de entrada
+- **Nó `guardrail`** (`app/graph/nodes/guardrail.py`, `build_graph(guardrail=True)`, `production_graph(guardrail=True)`, `scripts/qualify.py --guardrail`): entra depois do `validate_input`. Regras determinísticas primeiro (padrão conhecido não chama modelo); depois um modelo responde `GuardrailVerdict` (`app/security/guardrail.py`: `reason`, `is_injection`, `is_spam`, `is_out_of_scope`). Injeção ou spam viram a flag da ontologia e o lead vai direto ao `compute_score` (K1), **sem pesquisa nem extração**. Fora de escopo só é registrado (K3–K5 decidem com evidência). Se tudo falhar, o lead segue (fail open) com o erro registrado. Orçamento da execução com folga de 4 chamadas e 8K tokens (`guardrail_budget`). Diagrama em `docs/grafo-guardrail.mmd`.
+- **Prompts `v6`** = `v5` + `guardrail.md`/`guardrail_user.md`, registrados no `integrity.lock.json`. O system prompt do guardrail não leva o nonce (vai na mensagem do usuário): fixo, ele entra no cache de prefixo do Ollama, e a latência em CPU caiu ~3× no teste rápido. A justificativa vem antes dos booleanos.
+- **Benchmark** (`evals/guardrail_bench.py`, `evals/guardrail_set.jsonl`): 48 casos sintéticos revisados pelo autor (22 injeções e 8 spams que **nenhuma** regra pega, 15 legítimos com armadilhas e 3 fora de escopo) mais os 20 leads do dev; o test não entra. Cada modelo responde sozinho, com o prompt do nó e 1 nova tentativa. Retomada por arquivo, aquecimento do modelo fora da conta e relatório em `evals/reports/guardrail-bench.md`.
+
+  | Modelo | Injeções | Spam | Legítimos bloqueados | p50 |
+  |---|---:|---:|---:|---:|
+  | `qwen3:4b` (39 de 68) | 14/22 (64%) | 8/8 | 0/9 | 17,8 s |
+  | `qwen3:1.7b` | 8/24 (33%) | 7/9 | 4/32 | 7,0 s |
+  | `gemma3:1b` | 24/24 | 9/9 | 30/32 | 7,3 s |
+  | `groq-mini` | **22/24 (92%)** | 9/9 | **0/32** | 4,7 s |
+  | só regras | 2/33 ataques | | 0/32 | — |
+
+- **Decisão do autor (ADR `docs/adr/0006-guardrail.md`):** nenhum SLM de 1B a 4B atingiu a meta (recall ≥ 90% nas injeções, ≤ 1 legítimo bloqueado) em CPU, sem GPU e com 7 GB de RAM. O guardrail roda no **mini**, e o `qwen3:4b` (o mais preciso, já no catálogo) fica de **reserva**: o inverso do plano. `models.yaml` só teve o comentário atualizado (`lock_config --allow models`). Arquitetura (`00-arquitetura.md`: fluxo, nós, routing, LGPD, stack e ADRs) e `06-seguranca-agentes.md` (ASI01 e riscos residuais) atualizados.
+- **Real (grafo de produção, `v6`, agêntico + próximo passo):** a injeção G002, em inglês e sem nenhuma palavra que as regras conheçam, foi barrada pelo mini em 519 ms com 863 tokens → tier D (K1), sem pesquisa nem extração, com auditoria completa; o legítimo G031 ("ignorar a planilha antiga") passou e saiu A.
+- **Teste:** `tests/graph/test_guardrail.py` (15: lead limpo segue com o mini e sem a reserva; injeção e spam do modelo vão à K1 sem extração e sem copiar o texto do lead; regra bloqueia sem modelo nenhum; fora de escopo só registra; mini fora do ar ou com saída inválida → SLM; os dois falham → segue; system prompt fixo e lead delimitado, sem e-mail; orçamento; exige `v6`; diagrama; stub). `tests/unit/test_guardrail_bench.py` (9: conjunto válido, sem dados pessoais, URLs só `example.com`, nenhum ataque sintético casa com as regras, dev sim e test não, métricas, retomada, relatório parcial). `tests/integration/test_guardrail_live.py` (3, reais: mini bloqueia com o Ollama inacessível; Groq inacessível → `qwen3:4b` responde no schema; os dois inacessíveis → fail open). Mutação: sem o desvio do grafo ou sem a flag, 4 testes falham cada. `make check` (pelas ferramentas do `.venv`): 803 testes, cobertura de 94%, ruff, mypy strict, bandit, detect-secrets e pip-audit.
+- **Segurança:** ASI01 (lead delimitado com nonce, saída validada por schema, o modelo só marca a flag e o código aplica a K1; justificativa saneada e sem copiar o lead), ASI04 (fail closed: a `v6` só rodou depois de entrar no lock), ASI08 (orçamento por execução vale para o guardrail; timeout de 60 s no SLM, conexão recusada falha logo) e LGPD (e-mail fora do prompt e dos arquivos do benchmark, que guardam só ids e vereditos).
+- **Problemas corrigidos:** o `TypedDict` do state é lido pelo LangGraph em tempo de execução, então o `GuardrailVerdict` saiu de `app/graph` para `app/security/guardrail.py` (sem import circular); o relatório pegava as linhas das regras do primeiro modelo, que era o parcial; a rodada do `qwen3:4b` foi interrompida por falta de memória da máquina e não foi repetida (não mudaria a conclusão: no máximo 67%).
+- **Achados:**
+  - o mini deixa passar injeção em JSON embutido (G011) e diálogo forjado com o assistente (G014): entram na suíte de ataques da T33;
+  - o `gemma3:1b` não distingue injeção de lead legítimo; o `qwen3:1.7b` perde injeções em outros idiomas e nos campos de cargo e empresa;
+  - a reserva vale pouco se a Groq cair de vez, porque o `normalize` também usa o mini;
+  - o mini do benchmark (58.638 tokens) não fica em `agent_steps`: a conta da cota diária precisa somá-lo à parte.
+- 📸 `docs/linkedin/t28-guardrail.md` (injeção bloqueada no grafo real).

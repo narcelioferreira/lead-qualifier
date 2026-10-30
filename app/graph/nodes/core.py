@@ -52,6 +52,11 @@ def route_unless_failed(state: QualificationState) -> str:
     return "fail" if state.get("status") == "failed" else "continue"
 
 
+def route_guardrail(state: QualificationState) -> str:
+    """Lead barrado pelo guardrail (injeção ou spam) pula pesquisa, extração e justificativa."""
+    return "block" if state.get("guardrail_blocked") else "continue"
+
+
 def route_research(state: QualificationState) -> str:
     """Volta ao `agentic_research` só se há consulta pendente e o teto fixo não foi atingido."""
     pending = state.get("research_next")

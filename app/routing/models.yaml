@@ -24,8 +24,10 @@ models:
     temperature: 0
     max_output_tokens: 8000
     price_per_1m: {input: 0.15, cached_input: 0.075, output: 0.60}
-  # SLM local (guardrail e normalização de cargo). Provisório: o modelo definitivo é escolhido
-  # por benchmark no subconjunto do guardrail (T28). Custo de API zero; o custo é de infra.
+  # SLM local: reserva do guardrail quando o mini falha (T28). No benchmark do guardrail
+  # (evals/reports/guardrail-bench.md, ADR 0006), nenhum SLM de 1B a 4B atingiu a meta em CPU;
+  # o qwen3:4b teve a melhor precisão (0 legítimos bloqueados). Custo de API zero; o custo é
+  # de infra.
   ollama-slm:
     provider: ollama
     kind: chat

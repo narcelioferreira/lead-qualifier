@@ -37,7 +37,7 @@ Este é um projeto acadêmico com padrão profissional, que será documentado e 
 | `api` | FastAPI, grafo LangGraph, roteador de modelos e servidor MCP `lead-qualifier` montado em `/mcp` |
 | `tools-mcp` | Servidor MCP `lead-tools`, que isola integrações externas e segredos (Tavily e HubSpot) |
 | `postgres` | Postgres 16 + pgvector: tabelas de auditoria, checkpointer do LangGraph e embeddings da base de conhecimento |
-| `ollama` | SLM local para guardrail e normalização de cargo |
+| `ollama` | Embeddings do RAG e SLM local de reserva do guardrail |
 
 ---
 
@@ -50,7 +50,7 @@ START
 validate_input ──(inválido)──────────────────────────────────────► reject ─► audit_log ─► END
   │
   ▼
-guardrail [SLM] ──(spam / injeção / fora de escopo)──► disqualify (tier D) ─┐
+guardrail [mini] ──(spam / injeção)──────────────────► disqualify (tier D) ─┐
   │                                                                         │
   ▼                                                                         │
 agentic_research ◄──────┐   (loop: planeja busca → web/site/KB → avalia     │
@@ -80,7 +80,7 @@ audit_log ─► END
 | Nó | Modelo | Entrada → saída |
 |---|---|---|
 | `validate_input` | — | Valida o schema, normaliza o domínio e limita o tamanho da mensagem |
-| `guardrail` | SLM (Ollama) | Mensagem e cargo → `{is_spam, is_injection, is_out_of_scope, reason}`. O conteúdo do lead vai delimitado no prompt e é tratado sempre como dado. Fallback: mini |
+| `guardrail` | mini (reserva: SLM no Ollama) | Empresa, cargo e mensagem → `{reason, is_injection, is_spam, is_out_of_scope}`. Regras determinísticas antes (padrão conhecido não chama modelo). O conteúdo do lead vai delimitado no prompt e é tratado sempre como dado. Injeção ou spam viram a flag da ontologia e o lead vai direto ao `compute_score` (K1), sem pesquisa nem extração; fora de escopo só é registrado (K3–K5 decidem). Se o mini e o SLM falharem, o lead segue (fail open). **Decisão da T28 (ADR 0006):** o plano era SLM primeiro, mas nenhum SLM de 1B a 4B atingiu a meta em CPU (melhor: 64% das injeções, contra 92% do mini, com 0 legítimos bloqueados) |
 | `agentic_research` | mini | Planeja as consultas e chama as tools MCP. Faz uma autoavaliação no estilo Corrective RAG ("a evidência basta para setor, porte e país?"); se não bastar, reformula a consulta. Tem limite de iterações e de custo. **Decisão da T25:** o site é lido só no domínio declarado pelo lead (1ª iteração) e as consultas seguintes vão para a busca na web; a base de conhecimento fica para o `suggest_next_step`, porque os cases fictícios têm porte e UF que a extração poderia atribuir ao lead |
 | `normalize_to_ontology` | mini | Evidência bruta → **fatos** (CNAE, UF, país, funcionários, frota) e classificações enumeradas, com certeza e ids das evidências citadas. O **código** mapeia os fatos para setor (CNAE, só se o CNAE aparecer nas evidências), região (UF/país) e porte (funcionários, ou frota × 2,5 com certeza baixa) e calcula a confiança |
 | `assess_criteria` | router | Perfil + evidências citadas → **justificativa** em linguagem natural com citações (`E1`, `E2`...). Não altera valores nem pontua |
@@ -119,7 +119,7 @@ Ficam em `app/routing/policy.py` e `models.yaml` (modelos com versão fixada e p
 
 | Etapa | Rota padrão | Escala para | Gatilho de escalonamento |
 |---|---|---|---|
-| guardrail | SLM local | mini | SLM indisponível, timeout ou saída inválida |
+| guardrail | mini | SLM local (`qwen3:4b`) | mini indisponível ou saída inválida (T28, ADR 0006) |
 | research / normalize | mini | — | — |
 | assess_criteria | mini | modelo maior | confiança < 0,7, critérios conflitantes ou tier na fronteira (±5 pts) |
 | next_step | mini | — | — |
@@ -192,8 +192,8 @@ Autenticação por header `X-API-Key`. Documentação OpenAPI automática.
 
 ## 10. Segurança e LGPD
 - Delimitação de conteúdo não confiável (mensagem do lead e HTML dos sites) com instrução explícita de tratá-lo como dado. A saída é sempre um structured output validado.
-- Guardrail com SLM antes de qualquer chamada paga.
-- Pesquisa limitada a dados públicos da **empresa**: sem scraping de LinkedIn e sem enriquecimento de dados pessoais. O SLM local processa a mensagem sem enviá-la a terceiros.
+- Guardrail de entrada (regras + mini, T28) antes da pesquisa e da extração: lead com injeção ou spam não gera busca na web nem chamada de extração.
+- Pesquisa limitada a dados públicos da **empresa**: sem scraping de LinkedIn e sem enriquecimento de dados pessoais. A mensagem do lead vai à Groq (o e-mail, não); manter o texto só no SLM local foi avaliado na T28 e descartado, porque nenhum SLM de 1B a 4B atingiu a meta do guardrail em CPU.
 - Segredos em `.env`, nunca versionados. Containers com usuário não-root.
 - **SSRF na busca de sites:** cada requisição e cada redirect só seguem se o host resolver apenas para IPs públicos (portas 80/443, sem credenciais, até 5 MB de HTML). Risco residual: DNS rebinding entre a checagem e a conexão, a mitigar no container isolado de tools.
 
@@ -233,7 +233,7 @@ lead-qualifier/
 ```
 
 ## 13. Stack fechada
-Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · `mcp` 2.x (servidor `MCPServer` e cliente oficial) · Groq API (gpt-oss-20b + gpt-oss-120b, pesos abertos fixos) · Ollama (SLM de 1B a 4B, escolhido por benchmark no subconjunto do guardrail) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
+Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · `mcp` 2.x (servidor `MCPServer` e cliente oficial) · Groq API (gpt-oss-20b + gpt-oss-120b, pesos abertos fixos) · Ollama (embeddings e SLM de reserva do guardrail; 3 SLMs de 1B a 4B comparados por benchmark na T28) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
 
 ## 14. ADRs a registrar em `docs/adr/`
 1. LangGraph como orquestrador, em vez de chain ou PydanticAI
@@ -241,7 +241,7 @@ Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · `mcp` 2.x 
 3. Roteamento por regras, em vez de LLM-router
 4. MCP como fronteira das integrações externas
 5. pgvector, em vez de um vector DB dedicado
-6. SLM local no guardrail
+6. Guardrail no mini, com SLM local de reserva (resultado do benchmark da T28)
 7. Fora do escopo: Langflow, PydanticAI e Deep Agents (este último fica para a v2)
 
 ## 15. Roadmap de implementação (incremental e medido)

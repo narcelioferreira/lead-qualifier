@@ -12,6 +12,8 @@ Com `agentic=True` (T25), o `research` vira `agentic_research`, com uma aresta d
 si mesmo enquanto houver consulta pendente (no máximo 3 iterações, conferidas pelo roteador).
 Com `next_step=True` (T26), o `suggest_next_step` (RAG no playbook e nos cases) entra entre o
 `compute_score` e o `write_to_crm`.
+Com `guardrail=True` (T28), o `guardrail` (regras + mini) entra depois do `validate_input`;
+lead barrado por injeção ou spam vai direto ao `compute_score` (K1), sem pesquisa nem extração.
 
 Os nós de pesquisa, LLM, CRM e auditoria são injetados (`GraphNodes`): stubs na T13, reais na T14
 e mocks nos testes de grafo. `validate_input` e `compute_score` são código determinístico e
@@ -41,6 +43,7 @@ CompiledGraph = CompiledStateGraph[QualificationState, None, GraphInput, Qualifi
 MERMAID_PATH = Path(__file__).resolve().parents[2] / "docs" / "grafo.mmd"
 MERMAID_AGENTIC_PATH = MERMAID_PATH.with_name("grafo-agentico.mmd")
 MERMAID_RAG_PATH = MERMAID_PATH.with_name("grafo-rag.mmd")
+MERMAID_GUARDRAIL_PATH = MERMAID_PATH.with_name("grafo-guardrail.mmd")
 
 
 @dataclass(frozen=True)
@@ -51,10 +54,15 @@ class GraphNodes:
     write_to_crm: Node = stubs.write_to_crm
     audit_log: Node = stubs.audit_log
     suggest_next_step: Node = stubs.suggest_next_step
+    guardrail: Node = stubs.guardrail
 
 
 def build_graph(
-    nodes: GraphNodes | None = None, *, agentic: bool = False, next_step: bool = False
+    nodes: GraphNodes | None = None,
+    *,
+    agentic: bool = False,
+    next_step: bool = False,
+    guardrail: bool = False,
 ) -> CompiledGraph:
     nodes = nodes or GraphNodes()
     research = "agentic_research" if agentic else "research"
@@ -68,13 +76,21 @@ def build_graph(
     graph.add_node("audit_log", nodes.audit_log)
     if next_step:
         graph.add_node("suggest_next_step", nodes.suggest_next_step)
+    if guardrail:
+        graph.add_node("guardrail", nodes.guardrail)
 
     graph.add_edge(START, "validate_input")
     graph.add_conditional_edges(
         "validate_input",
         core.route_after_validation,
-        {"continue": research, "reject": "audit_log"},
+        {"continue": "guardrail" if guardrail else research, "reject": "audit_log"},
     )
+    if guardrail:
+        graph.add_conditional_edges(
+            "guardrail",
+            core.route_guardrail,
+            {"continue": research, "block": "compute_score"},
+        )
     if agentic:
         graph.add_conditional_edges(
             research, core.route_research, {"continue": research, "done": "normalize"}

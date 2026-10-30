@@ -1,7 +1,8 @@
 """Qualifica leads do dataset com o grafo real e mostra o resultado gravado na auditoria.
 
 Uso: `uv run python scripts/qualify.py L024 L005` (com `--crm`, grava no HubSpot; com
-`--next-step --prompt-version v4`, sugere o próximo passo com RAG). Exige o
+`--next-step --prompt-version v4`, sugere o próximo passo com RAG; com
+`--guardrail --prompt-version v6`, passa antes pelo guardrail no mini, com SLM de reserva). Exige o
 servidor MCP no ar (`docker compose up -d tools-mcp`). Gasta créditos da Tavily (com cache) e
 tokens da Groq. Use só leads do split **dev**: o split test é reservado às avaliações.
 """
@@ -22,6 +23,7 @@ async def main(
     prompt_version: str = "v2",
     agentic: bool = False,
     next_step: bool = False,
+    guardrail: bool = False,
 ) -> int:
     items = {item.id: item for item in load_dataset()}
     for lead_id in ids:
@@ -35,6 +37,7 @@ async def main(
         write_crm=crm,
         agentic=agentic,
         next_step=next_step,
+        guardrail=guardrail,
     ) as (graph, audit):
         for lead_id in ids:
             run_id = str(uuid.uuid4())
@@ -48,6 +51,14 @@ async def main(
                 f"score={result.score if result else '-'} "
                 f"confiança={state.get('confidence', '-')}"
             )
+            if guardrail:
+                verdict = state.get("guardrail")
+                route = next((s for s in state["steps"] if s.node == "guardrail"), None)
+                print(
+                    f"guardrail: barrado={bool(state.get('guardrail_blocked'))} "
+                    f"veredito={verdict.model_dump() if verdict else '-'} "
+                    f"rota={route.model_key or route.route_reason if route else '-'}"
+                )
             if agentic:
                 print(
                     f"pesquisa: {state.get('research_iterations', 0)} iteração(ões), "
@@ -86,6 +97,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--next-step", action="store_true", help="próximo passo com RAG da T26 (use v4)"
     )
+    parser.add_argument("--guardrail", action="store_true", help="guardrail da T28 (use v6)")
     args = parser.parse_args()
     raise SystemExit(
         asyncio.run(
@@ -95,6 +107,7 @@ if __name__ == "__main__":
                 prompt_version=args.prompt_version,
                 agentic=args.agentic,
                 next_step=args.next_step,
+                guardrail=args.guardrail,
             )
         )
     )

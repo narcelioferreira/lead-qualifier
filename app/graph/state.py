@@ -11,6 +11,7 @@ from app.audit.repository import StepRecord
 from app.ontology.models import LeadProfile
 from app.ontology.scoring import ScoreResult
 from app.schemas import Evidence, LeadInput, NextStep, QualificationResult
+from app.security.guardrail import GuardrailVerdict
 from tools_mcp.kb import KBHit
 
 PROMPT_VERSION = "v1"
@@ -30,6 +31,9 @@ class QualificationState(GraphInput, total=False):
     status: Status
     started_at: float  # epoch (s), para a latência total gravada na auditoria
     lead: LeadInput
+    # Guardrail de entrada (T28): veredito do mini (ou do SLM de reserva) e se o lead foi barrado.
+    guardrail: GuardrailVerdict
+    guardrail_blocked: bool
     evidence: Annotated[list[Evidence], operator.add]
     research_iterations: int
     # Pesquisa agêntica (T25): consultas já feitas e a próxima, decidida pelo código.
