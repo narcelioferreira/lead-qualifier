@@ -59,6 +59,7 @@ PLAYBOOK_QUERY = "ação, responsável, prazo e canal do próximo passo comercia
 # consulta geral vinha a seção "Ação", sem o encaminhamento que o passo padrão usa).
 DISQUALIFIED_QUERY = "encaminhamento do lead desqualificado por motivo da regra eliminatória"
 NO_CITATION = "sem citação válida: passo padrão do tier"
+GENERATED = "gerado com RAG"
 # Seção que todo case tem (validado por teste) e quantos documentos a busca dela olha.
 RESULTS_SECTION = "Resultados em 6 meses"
 RESULTS_K = 3
@@ -372,7 +373,7 @@ def make_suggest_next_step(deps: MvpDeps) -> Node:
             else:
                 context = [classification, profile_json, lead_text]
                 step, notes = compose(result.parsed, score, hits, context)
-                reason = NO_CITATION if notes == [NO_CITATION] else "gerado com RAG"
+                reason = NO_CITATION if notes == [NO_CITATION] else GENERATED
                 llm_steps.append(
                     StepRecord.from_llm(NODE, result, sources=[f"kb:{h.chunk_id}" for h in hits])
                 )

@@ -21,8 +21,11 @@ from evals.judge import (
     LeadView,
     agreement,
     cohen_kappa,
+    default_row,
     judge_case,
+    judge_defaults,
     judge_messages,
+    render_ablation,
     render_report,
     render_sheet,
     run_cases,
@@ -233,3 +236,74 @@ def test_agreement_command_requires_rows_and_review(
     (tmp_path / "review.jsonl").write_text(review("L024", True).model_dump_json() + "\n")
     assert judge.main(["agreement"]) == 0
     assert "**1/1**" in (tmp_path / "report.md").read_text(encoding="utf-8")
+
+
+# --- ablação da T27: passo padrão do tier × com RAG -----------------------------------------
+
+
+def test_default_row_uses_the_tier_plan_and_the_playbook() -> None:
+    from app.graph.nodes.next_step import TIER_PLANS
+
+    case_hit = HIT.model_copy(update={"doc_id": "case-x", "doc_type": DocType.CASE})
+    base = default_row(row("L024", verdict(), kb_hits=[case_hit, HIT], errors=["x"]))
+    assert base is not None and base.next_step is not None
+    plan = TIER_PLANS[Tier.A]
+    assert base.next_step.action == plan.action and base.next_step.owner == plan.owner
+    assert base.next_step.sla_hours == plan.sla_hours and base.next_step.talking_points == []
+    assert base.next_step.kb_citations == ["playbook-tier-a"]
+    assert base.judge is None and base.judge_tokens == 0 and base.errors == []
+    assert base.lead == row().lead and base.kb_hits == [case_hit, HIT]  # o judge vê o mesmo caso
+
+    assert default_row(row("L035", tier=Tier.D)) is None  # D já usa o padrão nos dois braços
+    assert default_row(row("L1", tier=None)) is None
+    assert default_row(row("L1", next_step=None)) is None
+
+
+async def test_judge_defaults_judges_only_the_default_and_resumes(tmp_path: Path) -> None:
+    rag = [row("L024", verdict()), row("L030", verdict(), tier=Tier.C),
+           row("L035", verdict(), tier=Tier.D)]  # fmt: skip
+    out = tmp_path / "default.jsonl"
+    sleeps: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    llm = FakeLLM({JudgeVerdict: [verdict(specific=False), verdict()]})
+    rows = await judge_defaults(rag, llm, SPEC, out, pause_s=3, sleep=sleep)
+    assert [r.id for r in rows] == ["L024", "L030"] and sleeps == [3]
+    assert rows[0].judge == verdict(specific=False) and rows[0].judge_tokens == 1100
+    assert len(llm.calls[JudgeVerdict]) == 2
+    assert await judge_defaults(rag, llm, SPEC, out, sleep=sleep) == []  # retomada
+
+
+def test_ablation_report_pairs_only_cases_judged_in_both_arms() -> None:
+    rag = [row("L024", verdict()), row("L038", verdict(grounded=False)), row("L046", None)]
+    defaults = [row("L024", verdict(specific=False, reason="genérico | tier")),
+                row("L038", verdict()), row("L046", verdict())]  # fmt: skip
+    report = render_ablation(rag, defaults)
+    assert "**2**" in report
+    assert "| Específico | 2/2 | 1/2 |" in report
+    assert "| Fundamentado | 1/2 | 2/2 |" in report
+    assert "| **Aprovado** | 1/2 | 1/2 |" in report
+    assert "| L024 | A | aprovado | reprovado | genérico / tier |" in report
+    assert "L046" not in report.split("| Lead |")[1]
+
+
+def test_default_command_requires_rag_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(judge, "load_rows", lambda path=None: [])
+    with pytest.raises(SystemExit, match="rode"):
+        judge.main(["default"])
+    rag = [row("L024", verdict())]
+    defaults = [row("L024", verdict(specific=False))]
+    monkeypatch.setattr(
+        judge, "load_rows", lambda path=None: defaults if path == judge.DEFAULT_RUNS_PATH else rag
+    )
+    calls: list[int] = []
+
+    async def fake_run(rows: Any, pause: float) -> None:
+        calls.append(len(rows))
+
+    monkeypatch.setattr(judge, "_run_defaults", fake_run)
+    monkeypatch.setattr(judge, "ABLATION_REPORT_PATH", tmp_path / "ablation.md")
+    assert judge.main(["default", "--pause", "1"]) == 0 and calls == [1]
+    assert "| **Aprovado** | 1/1 | 0/1 |" in (tmp_path / "ablation.md").read_text("utf-8")

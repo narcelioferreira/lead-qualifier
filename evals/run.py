@@ -28,6 +28,10 @@ from evals.dataset import DATASET_PATH, DatasetItem, Split, load_dataset
 from evals.labels import LABELS_PATH, FinalLabel, load_jsonl
 from evals.metrics import Prediction, compute_metrics, render_report
 
+# Constantes do nó do próximo passo, repetidas aqui para o runner não importar o grafo.
+NEXT_STEP_NODE = "suggest_next_step"
+GENERATED_WITH_RAG = "gerado com RAG"
+
 RUNS_DIR = DATASET_PATH.parent / "runs"
 REPORTS_DIR = DATASET_PATH.parent / "reports"
 # Pausa entre leads: o plano gratuito da Groq tem 8K tokens/min e o MVP gasta ~4,5K por lead.
@@ -53,6 +57,22 @@ async def _mvp(prompt_version: str) -> AsyncIterator[Graph]:
 
 
 @asynccontextmanager
+async def _rag(prompt_version: str) -> AsyncIterator[Graph]:
+    """Ablação (3) da arquitetura: pesquisa agêntica (T25) + próximo passo com RAG (T26).
+
+    Exige prompts com o planejador e o próximo passo (`v4`); normalize e assess da `v4` são
+    cópias exatas da `v2`, então a diferença para o `mvp` é só a pesquisa e o próximo passo.
+    """
+    from app.graph.runtime import production_graph
+
+    settings = get_settings()
+    async with production_graph(
+        settings, prompt_version=prompt_version, agentic=True, next_step=True
+    ) as (graph, _audit):
+        yield graph
+
+
+@asynccontextmanager
 async def _baseline(prompt_version: str) -> AsyncIterator[Graph]:
     from app.graph.runtime import baseline_graph
 
@@ -61,7 +81,7 @@ async def _baseline(prompt_version: str) -> AsyncIterator[Graph]:
 
 
 # Configurações avaliáveis (ablações da arquitetura, seção 11).
-CONFIGS: dict[str, GraphFactory] = {"baseline": _baseline, "mvp": _mvp}
+CONFIGS: dict[str, GraphFactory] = {"baseline": _baseline, "mvp": _mvp, "rag": _rag}
 # Status sem tier que valem uma nova tentativa (`--retry-failed`). Rejeição não: é determinística.
 RETRYABLE = frozenset({"failed", "error"})
 DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
@@ -86,6 +106,12 @@ class PredictionRow(BaseModel):
     prompt_version: str | None = None
     disqualifiers: list[str] = Field(default_factory=list)
     injection_rule: bool = False
+    # Pesquisa agêntica e próximo passo (T27, configuração `rag`). Linhas antigas ficam `None`.
+    research_iterations: int | None = None
+    research_queries: int | None = None
+    next_step_citations: list[str] | None = None
+    # `True` = o próximo passo é o padrão do tier (tier D, falha ou sem citação válida).
+    next_step_default: bool | None = None
     errors: list[str] = Field(default_factory=list)
     finished_at: datetime
 
@@ -95,6 +121,10 @@ def _row_from_state(
 ) -> PredictionRow:
     steps = state.get("steps", [])
     result = state.get("result")
+    next_step = result.next_step if result else None
+    summary = next(
+        (s for s in reversed(steps) if s.node == NEXT_STEP_NODE and s.model_key is None), None
+    )
     return PredictionRow(
         id=item.id,
         config=config,
@@ -110,6 +140,14 @@ def _row_from_state(
         prompt_version=state.get("prompt_version"),
         disqualifiers=list(result.disqualifiers) if result else [],
         injection_rule=bool(state.get("injection_hits")),
+        research_iterations=state.get("research_iterations")
+        if "research_queries" in state
+        else None,
+        research_queries=len(state["research_queries"]) if "research_queries" in state else None,
+        next_step_citations=list(next_step.kb_citations) if next_step else None,
+        next_step_default=(
+            summary.route_reason != GENERATED_WITH_RAG if summary and next_step else None
+        ),
         errors=[str(e)[:MAX_ERROR_CHARS] for e in state.get("errors", [])[:MAX_ERRORS]],
         finished_at=datetime.now(UTC),
     )

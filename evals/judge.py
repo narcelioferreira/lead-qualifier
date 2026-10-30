@@ -3,6 +3,7 @@
 Uso:
     uv run python -m evals.judge run L024 L038 ...   # gera (grafo real, v4, sem CRM) e julga
     uv run python -m evals.judge agreement           # concordância judge × revisão do autor
+    uv run python -m evals.judge default             # passo padrão do tier × com RAG (T27)
 
 Rubrica (4 critérios binários, a mesma para o judge e para o autor):
 - `follows_playbook`: a ação segue o playbook do tier (responsável, canal e prazo);
@@ -32,6 +33,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.graph.nodes.next_step import knowledge_block
+from app.knowledge_base import DocType
 from app.llm.base import LLMError, LLMOutputError, Message, StructuredLLM
 from app.prompts import new_nonce, untrusted
 from app.routing.cost import ModelSpec, get_catalog
@@ -45,6 +47,8 @@ RUNS_PATH = DATASET_PATH.parent / "runs" / "next-step-judge-dev.jsonl"
 REVIEW_PATH = DATASET_PATH.parent / "annotations" / "next_step_review.jsonl"
 SHEET_PATH = DATASET_PATH.parent / "reports" / "dev" / "next-step-review.md"
 REPORT_PATH = DATASET_PATH.parent / "reports" / "next-step-judge.md"
+DEFAULT_RUNS_PATH = DATASET_PATH.parent / "runs" / "next-step-judge-default-dev.jsonl"
+ABLATION_REPORT_PATH = DATASET_PATH.parent / "reports" / "dev" / "next-step-rag-vs-default.md"
 JUDGE_MODEL = "groq-large"
 PROMPT_VERSION = "v4"
 CRITERIA = ("follows_playbook", "grounded", "specific", "safe")
@@ -257,6 +261,94 @@ def write_review_template(rows: Sequence[CaseRow], path: Path = REVIEW_PATH) -> 
     return True
 
 
+def default_row(row: CaseRow) -> CaseRow | None:
+    """O mesmo caso com o passo padrão do tier no lugar do gerado com RAG (ablação da T27).
+
+    Ação, responsável e prazo vêm de `TIER_PLANS` e a citação é o playbook recuperado, como em
+    `default_next_step`. O tier D fica de fora: ele já recebe o passo padrão nos dois braços.
+    """
+    from app.graph.nodes.next_step import TIER_PLANS
+
+    if row.tier is None or row.tier is Tier.D or row.next_step is None:
+        return None
+    plan = TIER_PLANS[row.tier]
+    playbooks = [h.doc_id for h in row.kb_hits if h.doc_type is DocType.PLAYBOOK]
+    step = NextStep(
+        action=plan.action, owner=plan.owner, sla_hours=plan.sla_hours, kb_citations=playbooks[:1]
+    )
+    return row.model_copy(
+        update={
+            "next_step": step,
+            "judge": None,
+            "judge_tokens": 0,
+            "judge_prompt_sha256": prompt_sha256(),
+            "errors": [],
+        }
+    )
+
+
+async def judge_defaults(
+    rag_rows: Sequence[CaseRow],
+    llm: StructuredLLM,
+    spec: ModelSpec,
+    out: Path,
+    *,
+    pause_s: float = DEFAULT_PAUSE_S,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> list[CaseRow]:
+    """Julga o passo padrão de cada caso com RAG (só o judge chama a API). Retoma de `out`."""
+    done = {r.id for r in load_rows(out)}
+    pending = [d for r in rag_rows if r.id not in done and (d := default_row(r)) is not None]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rows: list[CaseRow] = []
+    for index, case in enumerate(pending):
+        if index:
+            await sleep(pause_s)
+        verdict, tokens, errors = await judge_case(llm, spec, case)
+        case = case.model_copy(update={"judge": verdict, "judge_tokens": tokens, "errors": errors})
+        with out.open("a", encoding="utf-8") as fh:
+            fh.write(case.model_dump_json() + "\n")
+        rows.append(case)
+    return rows
+
+
+def render_ablation(rag_rows: Sequence[CaseRow], default_rows: Sequence[CaseRow]) -> str:
+    """Próximo passo com RAG × passo padrão do tier, nos casos julgados nos dois braços."""
+    defaults = {r.id: r.judge for r in default_rows if r.judge is not None}
+    pairs = [
+        (r, r.judge, defaults[r.id]) for r in rag_rows if r.judge is not None and r.id in defaults
+    ]
+    out = [
+        "# Próximo passo: com RAG × passo padrão do tier (T27)",
+        "",
+        f"- Judge: `{JUDGE_MODEL}`, a mesma rubrica da T26; aprovação calculada pelo código",
+        f"- Com RAG: os casos da T26 (`{RUNS_PATH.name}`, prompts de next_step iguais na `v5`)",
+        "- Padrão: ação, responsável e prazo do tier (`TIER_PLANS`), citando o playbook",
+        f"- Casos nos dois braços: **{len(pairs)}** (tier D fora: usa o padrão nos dois)",
+        "",
+        "| Critério | Com RAG | Padrão |",
+        "|---|---|---|",
+    ]
+    for criterion in (*CRITERIA, "approved"):
+        label = CRITERIA_LABELS.get(criterion, "**Aprovado**")
+        rag = sum(bool(getattr(j, criterion)) for _, j, _ in pairs)
+        base = sum(bool(getattr(d, criterion)) for _, _, d in pairs)
+        out.append(f"| {label} | {rag}/{len(pairs)} | {base}/{len(pairs)} |")
+    out += [
+        "",
+        "| Lead | Tier | Com RAG | Padrão | Motivo do judge (padrão) |",
+        "|---|---|---|---|---|",
+    ]
+    for rag_row, rag_verdict, base_verdict in pairs:
+        tier = rag_row.tier.value if rag_row.tier else "—"
+        reason = base_verdict.reason.replace("|", "/")
+        out.append(
+            f"| {rag_row.id} | {tier} | {_yes(rag_verdict.approved)} "
+            f"| {_yes(base_verdict.approved)} | {reason} |"
+        )
+    return "\n".join(out) + "\n"
+
+
 def render_sheet(rows: Sequence[CaseRow]) -> str:
     """Planilha da revisão cega: tudo o que o judge vê, menos o veredito dele."""
     out = [
@@ -416,6 +508,19 @@ async def _run(ids: Sequence[str], pause_s: float) -> None:  # pragma: no cover 
         print(f"modelo da revisão criado em {REVIEW_PATH} (preencha os critérios)")
 
 
+async def _run_defaults(rag_rows: Sequence[CaseRow], pause_s: float) -> None:  # pragma: no cover
+    from app.config import get_settings
+    from app.llm.groq_client import GroqClient
+
+    settings = get_settings()
+    if settings.groq_api_key is None:
+        raise SystemExit("GROQ_API_KEY é obrigatória")
+    llm = GroqClient(settings.groq_api_key)
+    await judge_defaults(
+        rag_rows, llm, get_catalog().get(JUDGE_MODEL), DEFAULT_RUNS_PATH, pause_s=pause_s
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -423,9 +528,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("ids", nargs="+")
     run.add_argument("--pause", type=float, default=DEFAULT_PAUSE_S, help="segundos entre leads")
     sub.add_parser("agreement", help="concordância judge × revisão do autor")
+    default = sub.add_parser("default", help="julga o passo padrão do tier (ablação da T27)")
+    default.add_argument("--pause", type=float, default=DEFAULT_PAUSE_S)
     args = parser.parse_args(argv)
     if args.command == "run":  # pragma: no cover - rede real
         asyncio.run(_run(args.ids, args.pause))
+        return 0
+    if args.command == "default":
+        rag_rows = load_rows()
+        if not rag_rows:
+            raise SystemExit("rode `python -m evals.judge run ...` antes")
+        asyncio.run(_run_defaults(rag_rows, args.pause))
+        report = render_ablation(rag_rows, load_rows(DEFAULT_RUNS_PATH))
+        ABLATION_REPORT_PATH.write_text(report, encoding="utf-8")
+        print(report)
         return 0
     rows = load_rows()
     if not rows or not REVIEW_PATH.exists():
