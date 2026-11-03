@@ -189,3 +189,66 @@ async def test_rag_config_uses_agentic_research_and_next_step(
     async with run.CONFIGS["rag"]("v4") as graph:
         assert graph == "grafo"
     assert seen == {"prompt_version": "v4", "agentic": True, "next_step": True}
+
+
+# --- runner: configurações `routing` e `large_only` (T30) ---------------------------------
+
+
+@pytest.mark.parametrize(("config", "policy_name"), [("routing", None), ("large_only", "LARGE")])
+async def test_routed_configs_build_the_full_graph_with_a_policy(
+    monkeypatch: pytest.MonkeyPatch, config: str, policy_name: str | None
+) -> None:
+    from app.graph import runtime
+    from app.routing.policy import LARGE_ONLY, RoutingPolicy
+
+    seen: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def fake_graph(settings: Any, **kwargs: Any) -> AsyncIterator[tuple[str, None]]:
+        seen.update(kwargs)
+        yield "grafo", None
+
+    monkeypatch.setattr(runtime, "production_graph", fake_graph)
+    monkeypatch.setattr(run, "get_settings", lambda: None)
+    async with run.CONFIGS[config]("v6") as graph:
+        assert graph == "grafo"
+    policy = seen.pop("policy")
+    assert seen == {"prompt_version": "v6", "agentic": True, "next_step": True, "guardrail": True}
+    expected = LARGE_ONLY if policy_name else RoutingPolicy()
+    assert policy == expected
+
+
+def test_row_records_guardrail_escalation_and_tokens_by_model() -> None:
+    from app.routing.cost import Usage
+
+    item = load_dataset(split="dev")[0]
+    state = _state(next_step.GENERATED) | {
+        "guardrail_blocked": False,
+        "routing_decisions": [],
+        "steps": [
+            StepRecord(node="guardrail", model_key="groq-mini", usage=Usage(input_tokens=800)),
+            StepRecord(node="normalize", model_key="groq-mini", usage=Usage(input_tokens=1000)),
+            StepRecord(node="normalize", route_reason="roteamento: borderline → groq-large (x)"),
+            StepRecord(
+                node="normalize",
+                model_key="groq-large",
+                usage=Usage(input_tokens=1500, output_tokens=500),
+            ),
+        ],
+    }
+    row = _row_from_state(item, "routing", "r", state, 10)
+    assert (row.guardrail_blocked, row.escalated) == (False, True)
+    assert row.tokens_by_model == {"groq-mini": 1800, "groq-large": 2000}
+    old = _row_from_state(item, "rag", "r", _state(next_step.GENERATED), 10)
+    assert (old.guardrail_blocked, old.escalated, old.tokens_by_model) == (None, None, None)
+
+
+def test_runner_constants_match_guardrail_and_policy() -> None:
+    from app.graph.nodes import guardrail
+    from app.routing.policy import ROUTING_PREFIX, Trigger
+
+    assert run.GUARDRAIL_NODE == guardrail.NODE
+    assert (
+        tuple(f"{ROUTING_PREFIX} {t.value}" for t in (Trigger.LOW_CONFIDENCE, Trigger.BORDERLINE))
+        == run.ESCALATION
+    )

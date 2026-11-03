@@ -317,7 +317,7 @@ def wrong_rows(rows: Sequence[BenchRow]) -> list[BenchRow]:
     return [r for r in rows if is_wrong(r)]
 
 
-def report(models: Sequence[str], out: Path = REPORT_PATH) -> str:
+def report(models: Sequence[str], out: Path | None = None) -> str:
     all_stats, misses = [], {}
     rule_rows: list[BenchRow] = []
     for model in models:
@@ -329,6 +329,7 @@ def report(models: Sequence[str], out: Path = REPORT_PATH) -> str:
         misses[model] = wrong_rows(rows)
         rule_rows = rows if len(rows) > len(rule_rows) else rule_rows
     text = render(all_stats, misses, rule_rows, len(load_cases()))
+    out = out or REPORT_PATH  # lido na chamada: os testes trocam o caminho
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text + "\n", encoding="utf-8")
     return text

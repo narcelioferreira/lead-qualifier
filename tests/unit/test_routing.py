@@ -180,3 +180,12 @@ def test_decisions_from_steps_keeps_model_calls_and_policy_decisions_in_order() 
         {"node": "normalize", "model_key": None, "route_reason": steps[2].route_reason},  # type: ignore[attr-defined]
         {"node": "normalize", "model_key": LARGE, "route_reason": None},
     ]
+
+
+def test_large_only_puts_every_stage_on_the_larger_model_without_escalation() -> None:
+    from app.routing.policy import LARGE_ONLY
+
+    for stage in ("guardrail", "agentic_research", "normalize", "assess", "suggest_next_step"):
+        assert LARGE_ONLY.primary(stage) == LARGE
+        assert LARGE_ONLY.fallback(stage, LARGE, UNAVAILABLE) is None
+        assert LARGE_ONLY.escalation(stage, LARGE, 0.1, BORDERLINE_A) is None

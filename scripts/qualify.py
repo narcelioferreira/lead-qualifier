@@ -3,9 +3,9 @@
 Uso: `uv run python scripts/qualify.py L024 L005` (com `--crm`, grava no HubSpot; com
 `--next-step --prompt-version v4`, sugere o próximo passo com RAG; com
 `--guardrail --prompt-version v6`, passa antes pelo guardrail no mini, com SLM de reserva; com
-`--routing`, liga a política de roteamento da T29). Exige o
-servidor MCP no ar (`docker compose up -d tools-mcp`). Gasta créditos da Tavily (com cache) e
-tokens da Groq. Use só leads do split **dev**: o split test é reservado às avaliações.
+`--routing`, liga a política de roteamento da T29; com `--large-only`, tudo no modelo
+maior). Exige o servidor MCP no ar (`docker compose up -d tools-mcp`). Gasta créditos da Tavily
+(com cache) e tokens da Groq. Use só leads do split **dev**: o split test é reservado às avaliações.
 """
 
 import argparse
@@ -14,6 +14,7 @@ import uuid
 
 from app.config import get_settings
 from app.graph.runtime import production_graph
+from app.routing.policy import LARGE_ONLY, RoutingPolicy
 from evals.dataset import load_dataset
 
 
@@ -25,7 +26,7 @@ async def main(
     agentic: bool = False,
     next_step: bool = False,
     guardrail: bool = False,
-    routing: bool = False,
+    policy: RoutingPolicy | None = None,
 ) -> int:
     items = {item.id: item for item in load_dataset()}
     for lead_id in ids:
@@ -40,7 +41,7 @@ async def main(
         agentic=agentic,
         next_step=next_step,
         guardrail=guardrail,
-        routing=routing,
+        policy=policy,
     ) as (graph, audit):
         for lead_id in ids:
             run_id = str(uuid.uuid4())
@@ -62,7 +63,7 @@ async def main(
                     f"veredito={verdict.model_dump() if verdict else '-'} "
                     f"rota={route.model_key or route.route_reason if route else '-'}"
                 )
-            if routing:
+            if policy:
                 for decision in state.get("routing_decisions", []):
                     print(f"rota: {decision}")
             if agentic:
@@ -107,7 +108,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--routing", action="store_true", help="política de roteamento da T29 (fallback e escala)"
     )
+    parser.add_argument(
+        "--large-only", action="store_true", help="tudo no modelo maior (referência da T30)"
+    )
     args = parser.parse_args()
+    if args.routing and args.large_only:
+        parser.error("use --routing ou --large-only, não os dois")
+    chosen = RoutingPolicy() if args.routing else LARGE_ONLY if args.large_only else None
     raise SystemExit(
         asyncio.run(
             main(
@@ -117,7 +124,7 @@ if __name__ == "__main__":
                 agentic=args.agentic,
                 next_step=args.next_step,
                 guardrail=args.guardrail,
-                routing=args.routing,
+                policy=chosen,
             )
         )
     )

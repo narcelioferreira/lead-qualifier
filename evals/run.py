@@ -18,7 +18,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,9 +28,16 @@ from evals.dataset import DATASET_PATH, DatasetItem, Split, load_dataset
 from evals.labels import LABELS_PATH, FinalLabel, load_jsonl
 from evals.metrics import Prediction, compute_metrics, render_report
 
+if TYPE_CHECKING:
+    from app.routing.policy import RoutingPolicy
+
 # Constantes do nó do próximo passo, repetidas aqui para o runner não importar o grafo.
 NEXT_STEP_NODE = "suggest_next_step"
 GENERATED_WITH_RAG = "gerado com RAG"
+# Nó do guardrail (T28) e motivos de escalonamento da política (T29), também repetidos para não
+# importar o grafo; um teste confere que batem com `app/graph` e `app/routing/policy.py`.
+GUARDRAIL_NODE = "guardrail"
+ESCALATION = ("roteamento: low_confidence", "roteamento: borderline")
 
 RUNS_DIR = DATASET_PATH.parent / "runs"
 REPORTS_DIR = DATASET_PATH.parent / "reports"
@@ -73,6 +80,38 @@ async def _rag(prompt_version: str) -> AsyncIterator[Graph]:
 
 
 @asynccontextmanager
+async def _routed(prompt_version: str, policy: "RoutingPolicy") -> AsyncIterator[Graph]:
+    """Grafo completo da T28 (pesquisa agêntica, próximo passo e guardrail; prompts `v6`) com
+    uma política de roteamento (T29)."""
+    from app.graph.runtime import production_graph
+
+    settings = get_settings()
+    async with production_graph(
+        settings,
+        prompt_version=prompt_version,
+        agentic=True,
+        next_step=True,
+        guardrail=True,
+        policy=policy,
+    ) as (graph, _audit):
+        yield graph
+
+
+def _routing(prompt_version: str) -> AbstractAsyncContextManager[Graph]:
+    """Ablação (4): mini por padrão, escalonamento da extração e reservas (T29)."""
+    from app.routing.policy import RoutingPolicy
+
+    return _routed(prompt_version, RoutingPolicy())
+
+
+def _large_only(prompt_version: str) -> AbstractAsyncContextManager[Graph]:
+    """Ablação (5), referência de custo: o mesmo grafo da `routing` com tudo no modelo maior."""
+    from app.routing.policy import LARGE_ONLY
+
+    return _routed(prompt_version, LARGE_ONLY)
+
+
+@asynccontextmanager
 async def _baseline(prompt_version: str) -> AsyncIterator[Graph]:
     from app.graph.runtime import baseline_graph
 
@@ -81,7 +120,13 @@ async def _baseline(prompt_version: str) -> AsyncIterator[Graph]:
 
 
 # Configurações avaliáveis (ablações da arquitetura, seção 11).
-CONFIGS: dict[str, GraphFactory] = {"baseline": _baseline, "mvp": _mvp, "rag": _rag}
+CONFIGS: dict[str, GraphFactory] = {
+    "baseline": _baseline,
+    "mvp": _mvp,
+    "rag": _rag,
+    "routing": _routing,
+    "large_only": _large_only,
+}
 # Status sem tier que valem uma nova tentativa (`--retry-failed`). Rejeição não: é determinística.
 RETRYABLE = frozenset({"failed", "error"})
 DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
@@ -112,6 +157,10 @@ class PredictionRow(BaseModel):
     next_step_citations: list[str] | None = None
     # `True` = o próximo passo é o padrão do tier (tier D, falha ou sem citação válida).
     next_step_default: bool | None = None
+    # Guardrail e roteamento (T30, configurações `routing` e `large_only`). Linhas antigas: `None`.
+    guardrail_blocked: bool | None = None
+    escalated: bool | None = None
+    tokens_by_model: dict[str, int] | None = None
     errors: list[str] = Field(default_factory=list)
     finished_at: datetime
 
@@ -120,6 +169,7 @@ def _row_from_state(
     item: DatasetItem, config: str, run_id: str, state: dict[str, Any], latency_ms: int
 ) -> PredictionRow:
     steps = state.get("steps", [])
+    guarded = any(s.node == GUARDRAIL_NODE for s in steps)
     result = state.get("result")
     next_step = result.next_step if result else None
     summary = next(
@@ -148,9 +198,25 @@ def _row_from_state(
         next_step_default=(
             summary.route_reason != GENERATED_WITH_RAG if summary and next_step else None
         ),
+        guardrail_blocked=bool(state.get("guardrail_blocked")) if guarded else None,
+        escalated=(
+            any((s.route_reason or "").startswith(ESCALATION) for s in steps)
+            if "routing_decisions" in state
+            else None
+        ),
+        tokens_by_model=_tokens_by_model(steps) if "routing_decisions" in state else None,
         errors=[str(e)[:MAX_ERROR_CHARS] for e in state.get("errors", [])[:MAX_ERRORS]],
         finished_at=datetime.now(UTC),
     )
+
+
+def _tokens_by_model(steps: Sequence[Any]) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for step in steps:
+        if step.model_key:
+            used = step.usage.input_tokens + step.usage.output_tokens
+            totals[step.model_key] = totals.get(step.model_key, 0) + used
+    return totals
 
 
 async def run_eval(

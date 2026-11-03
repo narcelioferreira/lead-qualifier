@@ -160,4 +160,6 @@ def test_report_reads_the_saved_runs(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert out.read_text(encoding="utf-8").startswith("# Benchmark do guardrail")
     assert "`ausente`" not in text
     assert "| `m` (parcial: 15/68) |" in text and text.splitlines()[9].endswith("| — |")
+    monkeypatch.setattr(bench, "REPORT_PATH", tmp_path / "padrao.md")
     assert bench.main(["report", "m"]) == 0
+    assert (tmp_path / "padrao.md").exists()  # o relatório versionado não é sobrescrito

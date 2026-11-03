@@ -42,8 +42,8 @@ from app.security.injection import scan_sources
 
 NODE = "guardrail"
 SLM_KEY = "ollama-slm"
-PRIMARY = "mini"
-FALLBACK = "fallback: mini indisponível ou saída inválida, SLM local"
+PRIMARY = "principal"
+FALLBACK = "reserva: principal indisponível ou saída inválida"
 # Até 2 chamadas ao mini e 2 ao SLM (cada um com 1 nova tentativa), com prompts curtos.
 GUARDRAIL_CALLS = 4
 GUARDRAIL_TOKENS = 8_000

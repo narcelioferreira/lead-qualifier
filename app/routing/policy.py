@@ -80,10 +80,11 @@ DEFAULT_ROUTES: Mapping[str, Route] = {
 class RoutingPolicy:
     routes: Mapping[str, Route] = field(default_factory=lambda: dict(DEFAULT_ROUTES))
     confidence_min: float = CONFIDENCE_MIN
+    # Rota de etapa sem rota própria: só o mini, sem reserva.
+    default: Route = Route((MINI,))
 
     def route(self, stage: str) -> Route:
-        """Etapa sem rota própria fica só no mini, sem reserva."""
-        return self.routes.get(stage, Route((MINI,)))
+        return self.routes.get(stage, self.default)
 
     def primary(self, stage: str) -> str:
         return self.route(stage).models[0]
@@ -121,6 +122,11 @@ class RoutingPolicy:
             detail = f"score {score.score:g} na fronteira do tier {score.tier.value}"
             return RoutingDecision(stage, target, Trigger.BORDERLINE, detail)
         return None
+
+
+# Referência de custo da T30 (ablação 5): toda etapa no modelo maior, sem reserva nem
+# escalonamento. O guardrail também, para a única diferença em relação à `routing` ser o modelo.
+LARGE_ONLY = RoutingPolicy(routes={}, default=Route((LARGE,)))
 
 
 def decisions_from_steps(steps: Sequence[Any]) -> list[dict[str, Any]]:

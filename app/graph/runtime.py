@@ -64,15 +64,15 @@ async def production_graph(
     agentic: bool = False,
     next_step: bool = False,
     guardrail: bool = False,
-    routing: bool = False,
+    policy: RoutingPolicy | None = None,
 ) -> AsyncIterator[tuple[CompiledGraph, AuditRepository]]:
     """Grafo do MVP com dependências reais, mais o repositório de auditoria.
 
     `agentic=True` troca a pesquisa pelo loop da T25 (exige prompts `v3` ou mais novos) e amplia
     o orçamento. `next_step=True` acrescenta o próximo passo com RAG da T26 (exige `v4`).
     `guardrail=True` acrescenta o guardrail da T28 (mini, com SLM de reserva; exige `v6`).
-    `routing=True` liga a política de roteamento da T29 (fallback entre modelos e escalonamento
-    da extração para o modelo maior).
+    `policy` liga uma política de roteamento da T29: `RoutingPolicy()` (fallback entre modelos e
+    escalonamento da extração para o modelo maior) ou `LARGE_ONLY` (tudo no maior, T30).
     """
     async with production_deps(
         settings, prompt_version=prompt_version, write_crm=write_crm
@@ -84,9 +84,9 @@ async def production_graph(
             deps = replace(deps, budget=AGENTIC_BUDGET)
         if guardrail:
             deps = replace(deps, budget=guardrail_budget(deps.budget))
-        if routing:
+        if policy is not None:
             policy_budget = deps.budget.plus(ROUTING_CALLS, ROUTING_TOKENS)
-            deps = replace(deps, policy=RoutingPolicy(), budget=policy_budget)
+            deps = replace(deps, policy=policy, budget=policy_budget)
         nodes = make_agentic_nodes(deps) if agentic else make_nodes(deps)
         if next_step:
             nodes = with_next_step(nodes, deps)

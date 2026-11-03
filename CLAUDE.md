@@ -68,7 +68,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T27: configuração `rag` (`evals/run.py`), `evals/compare.py` (diferença pareada, McNemar) e prompts `v5` (3 regras no normalize). Dev v5 90% / κ 0,884 × mvp 95%; **test v5 66,7% / κ 0,662 × mvp 60,0% / κ 0,560** (McNemar p 0,69, no ruído), 2,2× tokens. Judge do próximo passo com RAG 5/8 × passo padrão 2/8. `03-rag.md`. **Achados:** fonte de outro domínio (L013, homônimo) e porte contraditório (L003).
 - ✅ T28: nó `guardrail` (regras → mini → SLM de reserva, fail open, fora de escopo só registra), prompts `v6`, `evals/guardrail_bench.py` + `guardrail_set.jsonl` (48 sintéticos + dev). Nenhum SLM de 1B a 4B atingiu a meta em CPU (qwen3:4b 64%, qwen3:1.7b 33%, gemma3:1b bloqueia 30/32 legítimos); **mini 22/24 injeções e 0/32 legítimos** → ADR `docs/adr/0006-guardrail.md`: guardrail no mini, `qwen3:4b` de reserva. 803 testes.
 - ✅ T29: `app/routing/policy.py` (rota por etapa; fallback depois dos retries; **escalonamento da extração** para o `groq-large` com confiança < 0,7 ou score na fronteira; o plano dizia `assess_criteria`, mas é o `normalize` que decide os critérios), integrada ao `_ask` (`MvpDeps.policy`, sem política nada muda), `routing_decisions` no `audit_log`, `production_graph(routing=True)`. Real: L027 escalou e saiu D. 838 testes, `policy.py` 100%.
-- ⏭️ **Próximo passo:** T30 (configurações `routing` e `large_only` no dev e no test; `04-routing.md` com custo × acurácia). Commits sem `Co-Authored-By`.
+- 🔄 T30 em andamento: código, gráfico e dev da `routing` prontos (sem commit); faltam 3 leads do `large_only` no dev, as rodadas únicas no test (cota da Groq em vários dias) e o `04-routing.md`.
+- ⏭️ **Próximo passo:** T31 (revisão humana com `interrupt()` e checkpointer no Postgres) enquanto a cota da Groq não libera; depois, a parte 2 da T30. Commits sem `Co-Authored-By`.
 
 ## Comandos
 ```bash
