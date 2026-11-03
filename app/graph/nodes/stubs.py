@@ -9,6 +9,7 @@ from typing import Any
 
 from app.audit.repository import StepRecord
 from app.graph.nodes.core import finalize
+from app.graph.nodes.review import make_request_review
 from app.graph.state import QualificationState
 from app.ontology.models import LeadProfile
 from app.schemas import Evidence, EvidenceSource
@@ -54,6 +55,10 @@ def guardrail(state: QualificationState) -> dict[str, Any]:
 def suggest_next_step(state: QualificationState) -> dict[str, Any]:
     """Sem próximo passo: a versão real (RAG, T26) está em `nodes/next_step.py`."""
     return {"steps": [StepRecord(node="suggest_next_step", route_reason="stub: sem RAG")]}
+
+
+# Revisão humana (T31) sem auditoria: o pedido fica só no checkpointer (testes de grafo).
+request_review = make_request_review(None)
 
 
 def write_to_crm(state: QualificationState) -> dict[str, Any]:

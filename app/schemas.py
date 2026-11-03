@@ -5,7 +5,7 @@ import re
 import unicodedata
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -16,7 +16,9 @@ from pydantic import (
     Field,
     HttpUrl,
     StringConstraints,
+    field_serializer,
     field_validator,
+    model_validator,
 )
 
 MAX_MESSAGE_CHARS = 4000
@@ -126,6 +128,12 @@ class Evidence(BaseModel):
     snippet: Annotated[CleanStr, StringConstraints(max_length=1000)]
     retrieved_at: datetime
 
+    @field_serializer("source_url")
+    def _url_as_text(self, url: HttpUrl | None) -> str | None:
+        # Texto também no `model_dump()` Python: o checkpointer (msgpack, T31) não serializa
+        # `HttpUrl`, e a validação refaz a URL ao carregar.
+        return None if url is None else str(url)
+
 
 class CriterionScore(BaseModel):
     """Resultado de um critério da rubrica: valor ontológico → pontos."""
@@ -149,6 +157,40 @@ class NextStep(BaseModel):
     kb_citations: list[str] = Field(default_factory=list)
 
 
+class ReviewDecision(BaseModel):
+    """Decisão do revisor humano (T31), recebida por `POST /v1/runs/{run_id}/review`.
+
+    `approve` mantém o tier calculado; `override` troca o tier (o score da rubrica não muda e
+    fica registrado ao lado do tier original). Texto livre é sanitizado como o do lead.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action: Literal["approve", "override"]
+    tier: Tier | None = None
+    reviewer: Annotated[CleanStr, StringConstraints(min_length=2, max_length=80)]
+    comment: Annotated[CleanStr, StringConstraints(max_length=1000)] = ""
+
+    @model_validator(mode="after")
+    def _tier_only_on_override(self) -> Self:
+        if (self.action == "override") != (self.tier is not None):
+            raise ValueError("`tier` é obrigatório no override e proibido no approve")
+        return self
+
+
+class HumanReview(BaseModel):
+    """Revisão aplicada ao resultado: quem decidiu, o tier calculado e o final."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action: Literal["approve", "override"]
+    original_tier: Tier
+    final_tier: Tier
+    reviewer: str = Field(max_length=80)
+    comment: str = Field(default="", max_length=1000)
+    reviewed_at: datetime
+
+
 class QualificationResult(BaseModel):
     """Saída final do agente, gravada no CRM e na auditoria."""
 
@@ -167,3 +209,5 @@ class QualificationResult(BaseModel):
     rationale: str = Field(max_length=4000)
     prompt_version: str
     cost_usd: float = Field(ge=0)
+    # Revisão humana (T31): presente só quando o lead passou pelo `human_review`.
+    review: HumanReview | None = None

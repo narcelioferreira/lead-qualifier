@@ -1,15 +1,19 @@
 """Exporta os diagramas Mermaid do grafo: `docs/grafo.mmd` (MVP), `docs/grafo-agentico.mmd` (T25),
 `docs/grafo-rag.mmd` (pesquisa agêntica + próximo passo com RAG, T26) e
-`docs/grafo-guardrail.mmd` (o mesmo, com o guardrail de entrada da T28).
+`docs/grafo-guardrail.mmd` (o mesmo, com o guardrail de entrada da T28) e
+`docs/grafo-revisao.mmd` (o grafo completo, mais a revisão humana da T31).
 
 Uso: `uv run python scripts/export_graph.py`. Há teste garantindo que o arquivo está atualizado.
 """
+
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.graph.builder import (
     MERMAID_AGENTIC_PATH,
     MERMAID_GUARDRAIL_PATH,
     MERMAID_PATH,
     MERMAID_RAG_PATH,
+    MERMAID_REVIEW_PATH,
     build_graph,
     to_mermaid,
 )
@@ -21,4 +25,12 @@ if __name__ == "__main__":
     MERMAID_RAG_PATH.write_text(to_mermaid(rag), encoding="utf-8")
     guarded = build_graph(agentic=True, next_step=True, guardrail=True)
     MERMAID_GUARDRAIL_PATH.write_text(to_mermaid(guarded), encoding="utf-8")
+    reviewed = build_graph(
+        agentic=True,
+        next_step=True,
+        guardrail=True,
+        human_review=True,
+        checkpointer=InMemorySaver(),
+    )
+    MERMAID_REVIEW_PATH.write_text(to_mermaid(reviewed), encoding="utf-8")
     print(f"diagramas exportados para {MERMAID_PATH.parent}")

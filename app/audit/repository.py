@@ -1,6 +1,8 @@
 """Repositório de auditoria: grava e lê execuções completas do agente.
 
 Ciclo de uma execução: `start_run` → `add_step` (um por nó) → `complete_run` ou `fail_run`.
+Com revisão humana (T31): `request_review` (parada no `interrupt()`, grava os passos até ali) →
+`claim_review` (decisão recebida, volta a `running`) → `record_run` (só os passos novos).
 O custo da execução é sempre a soma dos passos, calculada no banco: não há como o total
 divergir do detalhe.
 """
@@ -24,6 +26,7 @@ from app.schemas import LeadInput, QualificationResult
 MAX_ERRORS = 20
 
 FinalStatus = Literal["completed", "failed", "needs_review", "rejected"]
+ReviewClaim = Literal["claimed", "not_found", "not_awaiting"]
 MAX_ERROR_CHARS = 500
 
 
@@ -106,6 +109,8 @@ class RunView(BaseModel):
     crm_ids: dict[str, Any] | None
     errors: list[str]
     steps: list[StepView]
+    review_requested_at: datetime | None = None
+    review: dict[str, Any] | None = None
 
 
 def mask_email(email: str | None) -> str | None:
@@ -185,6 +190,47 @@ class AuditRepository:
                 .values(status="failed", errors=_clean_errors([message]), finished_at=func.now())
             )
         return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+    async def request_review(
+        self,
+        run_id: uuid.UUID,
+        result: QualificationResult,
+        steps: Sequence[StepRecord],
+        latency_ms: int,
+    ) -> None:
+        """Execução parada no `human_review`: passos até aqui e resultado provisório.
+
+        Fica `needs_review`, sem `finished_at`; o custo já soma os passos gravados.
+        """
+        if result.run_id != str(run_id):
+            raise AuditError("run_id do resultado não confere com a execução")
+        async with self._sessions.begin() as session:
+            run = await self._running(session, run_id)
+            run.status = "needs_review"
+            run.review_requested_at = func.now()
+            for step in steps:
+                session.add(_step_row(run_id, step))
+            await session.flush()
+            _apply_result(run, result)
+            await self._close(session, run, latency_ms, finished=False)
+
+    async def claim_review(self, run_id: uuid.UUID, decision: dict[str, Any]) -> ReviewClaim:
+        """Reserva a retomada de uma execução parada no `interrupt()` (uma decisão só).
+
+        Execução `needs_review` sem pedido de revisão (grafo sem checkpoint, como as das
+        avaliações) não é retomável. O `FOR UPDATE` impede duas decisões concorrentes.
+        """
+        async with self._sessions.begin() as session:
+            run = await session.scalar(
+                select(AgentRun).where(AgentRun.run_id == run_id).with_for_update()
+            )
+            if run is None:
+                return "not_found"
+            if run.status != "needs_review" or run.review_requested_at is None:
+                return "not_awaiting"
+            run.status = "running"
+            run.review = decision
+        return "claimed"
 
     async def record_run(
         self,
@@ -285,6 +331,8 @@ class AuditRepository:
                 crm_ids=run.crm_ids,
                 errors=run.errors,
                 steps=[_step_view(s) for s in run.steps],
+                review_requested_at=run.review_requested_at,
+                review=run.review,
             )
 
     @staticmethod
@@ -300,7 +348,9 @@ class AuditRepository:
         return run
 
     @staticmethod
-    async def _close(session: AsyncSession, run: AgentRun, latency_ms: int) -> None:
+    async def _close(
+        session: AsyncSession, run: AgentRun, latency_ms: int, *, finished: bool = True
+    ) -> None:
         total = await session.scalar(
             select(func.coalesce(func.sum(AgentStep.cost_usd), 0)).where(
                 AgentStep.run_id == run.run_id
@@ -308,7 +358,8 @@ class AuditRepository:
         )
         run.cost_usd = Decimal(total or 0)
         run.latency_ms = latency_ms
-        run.finished_at = func.now()
+        if finished:
+            run.finished_at = func.now()
 
 
 def _step_row(run_id: uuid.UUID, step: StepRecord) -> AgentStep:

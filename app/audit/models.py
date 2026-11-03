@@ -70,6 +70,10 @@ class AgentRun(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     crm_ids: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     errors: Mapped[list[str]] = mapped_column(JSONB, server_default="[]")
+    # Revisão humana (T31): quando o grafo parou no `interrupt()` e a decisão recebida. Só uma
+    # execução parada pelo grafo (com checkpoint) pode ser retomada, e uma vez só.
+    review_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     steps: Mapped[list["AgentStep"]] = relationship(
         back_populates="run", order_by="AgentStep.id", cascade="all, delete-orphan"

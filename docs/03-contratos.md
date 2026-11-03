@@ -38,13 +38,21 @@ Campos extras são **rejeitados** (`extra="forbid"`). Isso impede, por exemplo, 
 | Rota | Entrada | Saída |
 |---|---|---|
 | `POST /v1/leads/qualify` | `LeadInput` (JSON, até 32 KB) | **202** `QualifyAccepted`: `run_id`, `status: "running"` e `status_url`, mais o header `Location` |
-| `GET /v1/runs/{run_id}` | UUID | `RunOut`: `status`, `tier`, `score`, `confidence`, `result` (`QualificationResult`), `cost_usd`, `latency_ms`, `crm_ids`, `errors`. Os passos internos ficam só na auditoria |
+| `GET /v1/runs/{run_id}` | UUID | `RunOut`: `status`, `tier`, `score`, `confidence`, `result` (`QualificationResult`), `cost_usd`, `latency_ms`, `crm_ids`, `errors` e `review_requested_at` (T31). Os passos internos ficam só na auditoria |
 | `GET /v1/runs` | `status` (um dos status da auditoria), `limit` 1–100, `offset` 0–10.000 | `RunList`: `items` (`RunSummary`), `limit` e `offset` |
 | `GET /health` | — | `Health`: `status` (`ok`/`degraded`) e `checks` (`ok`/`fail` por serviço). 503 se Postgres ou MCP falhar |
+| `POST /v1/runs/{run_id}/review` (T31) | `ReviewDecision` | **202** `QualifyAccepted` e `Location`; o grafo retoma em background. **404** run inexistente; **409** execução que não está parada esperando revisão (inclui `needs_review` sem checkpoint, de antes da T31 ou das avaliações) ou já decidida |
 
 Erros: **401** sem `X-API-Key` válida, **404** para run inexistente, **413** para corpo acima do limite, **422** com só `loc` e `type` de cada erro (sem o valor enviado) e **429** com `Retry-After` quando a fila enche.
 
 Status de uma execução: `running` (aceita, na fila ou rodando), `completed`, `needs_review`, `rejected` e `failed`.
+
+## Revisão humana (T31)
+`ReviewDecision` (entrada, `extra="forbid"`): `action` (`approve` mantém o tier calculado; `override` troca o tier), `tier` (obrigatório no `override` e proibido no `approve`), `reviewer` (2–80 caracteres) e `comment` (até 1.000). O texto é sanitizado como o do lead.
+
+`HumanReview` (em `QualificationResult.review`): `action`, `original_tier` (o da rubrica), `final_tier`, `reviewer`, `comment` e `reviewed_at`. O `score` continua o da rubrica; com `override`, o `tier` do resultado é o do revisor.
+
+Ciclo: `running` → `needs_review` (o grafo parou; `review_requested_at` preenchido, sem `finished_at`) → `running` (decisão reservada, uma só) → `completed`. A latência gravada não conta a espera pelo revisor.
 
 ## Settings (variáveis de ambiente)
 | Variável | Obrigatória | Observação |
@@ -59,5 +67,6 @@ Status de uma execução: `running` (aceita, na fila ou rodando), `completed`, `
 | `API_PROMPT_VERSION` | — | Versão dos prompts usada pela API (padrão `v2`) |
 | `API_MAX_CONCURRENT_RUNS`, `API_MAX_PENDING_RUNS` | — | Fila: 1–4 em paralelo (padrão 1) e 1–100 aceitas e não terminadas (padrão 10) |
 | `API_MAX_BODY_BYTES` | — | 1 KB–1 MB (padrão 32 KB) |
+| `API_HUMAN_REVIEW` | — | Revisão humana com checkpointer no Postgres (padrão `true`, T31) |
 
 Todos os segredos usam `SecretStr` e não aparecem em `repr`, logs nem tracebacks (há teste para isso).

@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 
 import httpx
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from app import integrity
 from app.audit.db import create_engine, session_factory
@@ -19,6 +20,7 @@ from app.graph.nodes.guardrail import guardrail_budget, with_guardrail
 from app.graph.nodes.mvp import MvpDeps, make_baseline_nodes, make_nodes
 from app.graph.nodes.next_step import with_next_step
 from app.graph.nodes.research import AGENTIC_BUDGET, make_agentic_nodes
+from app.graph.nodes.review import with_human_review
 from app.llm.groq_client import GroqClient
 from app.llm.ollama_client import OllamaClient
 from app.mcp_client import connect
@@ -65,6 +67,7 @@ async def production_graph(
     next_step: bool = False,
     guardrail: bool = False,
     policy: RoutingPolicy | None = None,
+    checkpointer: BaseCheckpointSaver[str] | None = None,
 ) -> AsyncIterator[tuple[CompiledGraph, AuditRepository]]:
     """Grafo do MVP com dependências reais, mais o repositório de auditoria.
 
@@ -73,6 +76,8 @@ async def production_graph(
     `guardrail=True` acrescenta o guardrail da T28 (mini, com SLM de reserva; exige `v6`).
     `policy` liga uma política de roteamento da T29: `RoutingPolicy()` (fallback entre modelos e
     escalonamento da extração para o modelo maior) ou `LARGE_ONLY` (tudo no maior, T30).
+    `checkpointer` liga a revisão humana da T31: lead com a regra de incerteza para no
+    `human_review` e espera a decisão no checkpointer (`app/graph/checkpoint.py`).
     """
     async with production_deps(
         settings, prompt_version=prompt_version, write_crm=write_crm
@@ -93,7 +98,16 @@ async def production_graph(
         if guardrail:
             slm = OllamaClient(settings.ollama_base_url, timeout=GUARDRAIL_TIMEOUT)
             nodes = with_guardrail(nodes, deps, slm)
-        graph = build_graph(nodes, agentic=agentic, next_step=next_step, guardrail=guardrail)
+        if checkpointer is not None:
+            nodes = with_human_review(nodes, audit)
+        graph = build_graph(
+            nodes,
+            agentic=agentic,
+            next_step=next_step,
+            guardrail=guardrail,
+            human_review=checkpointer is not None,
+            checkpointer=checkpointer,
+        )
         yield graph, audit
 
 

@@ -77,7 +77,16 @@ def note_text(state: QualificationState, result: QualificationResult) -> str:
         header.append(f"Regras eliminatórias: {', '.join(result.disqualifiers)}. {reason}".strip())
     if result.caps_applied:
         header.append(f"Tetos aplicados: {', '.join(result.caps_applied)}")
-    if result.needs_human_review or result.is_borderline:
+    review = result.review
+    if review is not None:
+        change = (
+            f"tier {review.original_tier.value} mantido"
+            if review.action == "approve"
+            else f"tier alterado de {review.original_tier.value} para {review.final_tier.value}"
+        )
+        comment = f" Comentário: {review.comment}" if review.comment else ""
+        header.append(f"Revisão humana: {change} por {review.reviewer}.{comment}")
+    elif result.needs_human_review or result.is_borderline:
         header.append("Revisão humana recomendada (fronteira entre tiers ou baixa certeza).")
     criteria = ["Critérios:"] + [
         f"- {CRITERION_LABELS.get(c.criterion, c.criterion)}: {c.value} "

@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     api_max_concurrent_runs: int = Field(default=1, ge=1, le=4)
     api_max_pending_runs: int = Field(default=10, ge=1, le=100)
     api_max_body_bytes: int = Field(default=32_768, ge=1024, le=1_048_576)
+    # Revisão humana (T31): lead com a regra de incerteza para e espera `POST .../review`.
+    api_human_review: bool = True
 
     @field_validator("api_key")
     @classmethod

@@ -5,18 +5,21 @@ Garantias:
 - fila limitada (ASI08): no máximo `max_pending` execuções aceitas e não terminadas, e
   `max_concurrent` rodando ao mesmo tempo (plano gratuito da Groq). Fila cheia → `QueueFullError`;
 - uma execução nunca fica `running` para sempre: exceção, cancelamento ou falha ao gravar o
-  resultado viram `failed`, com mensagem genérica (o detalhe não sai da API).
+  resultado viram `failed`, com mensagem genérica (o detalhe não sai da API);
+- a retomada de uma revisão humana (T31) passa pela mesma fila e pelos mesmos limites; a
+  decisão é reservada no banco antes do 202 (`claim_review`), então vale uma vez só.
 """
 
 import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Sequence
-from typing import Protocol
+from collections.abc import Awaitable, Callable, Sequence
+from functools import partial
+from typing import Any, Protocol
 
-from app.audit.repository import RunSummary, RunView
-from app.schemas import LeadInput
+from app.audit.repository import ReviewClaim, RunSummary, RunView
+from app.schemas import LeadInput, ReviewDecision
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,8 @@ class RunStore(Protocol):
         self, *, status: str | None = None, limit: int = 20, offset: int = 0
     ) -> list[RunSummary]: ...
 
+    async def claim_review(self, run_id: uuid.UUID, decision: dict[str, Any]) -> ReviewClaim: ...
+
 
 class Executor(Protocol):
     """Roda o grafo para uma execução já criada (produção: `app/api/production.py`)."""
@@ -43,8 +48,22 @@ class Executor(Protocol):
     async def __call__(self, run_id: uuid.UUID, lead: LeadInput) -> None: ...
 
 
+class Resumer(Protocol):
+    """Retoma o grafo parado na revisão humana com a decisão (produção: `production.py`)."""
+
+    async def __call__(self, run_id: uuid.UUID, decision: ReviewDecision) -> None: ...
+
+
 class QueueFullError(Exception):
     """Fila no limite: a API responde 429."""
+
+
+class RunNotFoundError(Exception):
+    """Execução inexistente: a API responde 404."""
+
+
+class NotAwaitingReviewError(Exception):
+    """Execução que não está parada esperando revisão (ou já decidida): a API responde 409."""
 
 
 class RunQueue:
@@ -53,12 +72,14 @@ class RunQueue:
         store: RunStore,
         executor: Executor,
         *,
+        resumer: Resumer | None = None,
         prompt_version: str,
         max_concurrent: int = 1,
         max_pending: int = 10,
     ) -> None:
         self._store = store
         self._executor = executor
+        self._resumer = resumer
         self._prompt_version = prompt_version
         self._slots = asyncio.Semaphore(max_concurrent)
         self._max_pending = max_pending
@@ -75,18 +96,42 @@ class RunQueue:
         self._starting += 1
         try:
             run_id = await self._store.start_run(lead, self._prompt_version, uuid.uuid4())
-            task = asyncio.create_task(self._run(run_id, lead), name=f"run-{run_id}")
+            job = partial(self._executor, run_id, lead)
+            task = asyncio.create_task(self._run(run_id, job), name=f"run-{run_id}")
         finally:
             self._starting -= 1
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        self._track(task)
         return run_id
 
-    async def _run(self, run_id: uuid.UUID, lead: LeadInput) -> None:
+    async def submit_review(self, run_id: uuid.UUID, decision: ReviewDecision) -> None:
+        """Reserva a decisão e retoma o grafo em background (o 202 sai antes da retomada)."""
+        resumer = self._resumer
+        if resumer is None:  # API sem revisão humana: nenhuma execução está parada
+            raise NotAwaitingReviewError
+        if self.pending >= self._max_pending:
+            raise QueueFullError
+        self._starting += 1
+        try:
+            claim = await self._store.claim_review(run_id, decision.model_dump(mode="json"))
+            if claim == "not_found":
+                raise RunNotFoundError
+            if claim == "not_awaiting":
+                raise NotAwaitingReviewError
+            job = partial(resumer, run_id, decision)
+            task = asyncio.create_task(self._run(run_id, job), name=f"review-{run_id}")
+        finally:
+            self._starting -= 1
+        self._track(task)
+
+    def _track(self, task: asyncio.Task[None]) -> None:
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _run(self, run_id: uuid.UUID, job: Callable[[], Awaitable[None]]) -> None:
         started = time.monotonic()
         try:
             async with self._slots:
-                await self._executor(run_id, lead)
+                await job()
         except asyncio.CancelledError:
             await self._fail(run_id, "execução interrompida (API encerrada)", started)
             raise

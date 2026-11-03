@@ -13,6 +13,7 @@ from typing import Any
 
 from app.audit.repository import (
     AuditError,
+    ReviewClaim,
     RunSummary,
     RunView,
     StepRecord,
@@ -44,6 +45,8 @@ class MemoryAuditRepository:
             "crm_ids": None,
             "errors": [],
             "steps": [],
+            "review_requested_at": None,
+            "review": None,
         }
 
     def _running(self, run_id: uuid.UUID) -> dict[str, Any]:
@@ -54,10 +57,27 @@ class MemoryAuditRepository:
             raise AuditError(f"execução {run_id} já foi encerrada ({run['status']})")
         return run
 
-    def _close(self, run: dict[str, Any], latency_ms: int) -> None:
+    def _close(self, run: dict[str, Any], latency_ms: int, *, finished: bool = True) -> None:
         run["cost_usd"] = sum((s.cost_usd for s in run["steps"]), Decimal(0))
         run["latency_ms"] = latency_ms
-        run["finished_at"] = datetime.now(UTC)
+        if finished:
+            run["finished_at"] = datetime.now(UTC)
+
+    def _add_steps(self, run: dict[str, Any], steps: Sequence[StepRecord]) -> None:
+        now, first = datetime.now(UTC), len(run["steps"]) + 1
+        run["steps"] = run["steps"] + [
+            StepView(id=i, created_at=now, **s.model_dump()) for i, s in enumerate(steps, first)
+        ]
+
+    @staticmethod
+    def _apply_result(run: dict[str, Any], result: QualificationResult) -> None:
+        run |= {
+            "tier": result.tier.value,
+            "score": Decimal(str(result.score)),
+            "confidence": Decimal(str(result.confidence)),
+            "next_step": result.next_step.model_dump(mode="json") if result.next_step else None,
+            "result": result.model_dump(mode="json"),
+        }
 
     async def start_run(
         self, lead: LeadInput, prompt_version: str, run_id: uuid.UUID | None = None
@@ -76,6 +96,30 @@ class MemoryAuditRepository:
         for run in orphans:
             run |= {"status": "failed", "errors": [message], "finished_at": datetime.now(UTC)}
         return len(orphans)
+
+    async def request_review(
+        self,
+        run_id: uuid.UUID,
+        result: QualificationResult,
+        steps: Sequence[StepRecord],
+        latency_ms: int,
+    ) -> None:
+        if result.run_id != str(run_id):
+            raise AuditError("run_id do resultado não confere com a execução")
+        run = self._running(run_id)
+        run |= {"status": "needs_review", "review_requested_at": datetime.now(UTC)}
+        self._add_steps(run, steps)
+        self._apply_result(run, result)
+        self._close(run, latency_ms, finished=False)
+
+    async def claim_review(self, run_id: uuid.UUID, decision: dict[str, Any]) -> ReviewClaim:
+        run = self.runs.get(run_id)
+        if run is None:
+            return "not_found"
+        if run["status"] != "needs_review" or not run["review_requested_at"]:
+            return "not_awaiting"
+        run |= {"status": "running", "review": decision}
+        return "claimed"
 
     async def record_run(
         self,
@@ -101,26 +145,16 @@ class MemoryAuditRepository:
         if run_id not in self.runs:
             self._new(run_id, prompt_version, lead_input)
         run = self._running(run_id)
-        now = datetime.now(UTC)
         run |= {
             "status": status,
             "prompt_version": prompt_version,
             "lead_input": lead_input,
             "errors": list(errors),
             "crm_ids": crm_ids or None,
-            "steps": [
-                StepView(id=i, created_at=now, **s.model_dump())
-                for i, s in enumerate(steps, start=1)
-            ],
         }
+        self._add_steps(run, steps)  # acrescenta: a execução retomada já tem os passos de antes
         if result is not None:
-            run |= {
-                "tier": result.tier.value,
-                "score": Decimal(str(result.score)),
-                "confidence": Decimal(str(result.confidence)),
-                "next_step": result.next_step.model_dump(mode="json") if result.next_step else None,
-                "result": result.model_dump(mode="json"),
-            }
+            self._apply_result(run, result)
         self._close(run, latency_ms)
 
     async def get_run(self, run_id: uuid.UUID) -> RunView | None:

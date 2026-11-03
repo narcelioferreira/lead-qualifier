@@ -14,6 +14,9 @@ Com `next_step=True` (T26), o `suggest_next_step` (RAG no playbook e nos cases) 
 `compute_score` e o `write_to_crm`.
 Com `guardrail=True` (T28), o `guardrail` (regras + mini) entra depois do `validate_input`;
 lead barrado por injeção ou spam vai direto ao `compute_score` (K1), sem pesquisa nem extração.
+Com `human_review=True` (T31), lead com a regra de incerteza da ontologia passa por
+`request_review` e para no `human_review` (`interrupt()`) até a decisão do revisor; exige um
+checkpointer (`app/graph/checkpoint.py`), onde o state espera.
 
 Os nós de pesquisa, LLM, CRM e auditoria são injetados (`GraphNodes`): stubs na T13, reais na T14
 e mocks nos testes de grafo. `validate_input` e `compute_score` são código determinístico e
@@ -25,10 +28,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.nodes import core, stubs
+from app.graph.nodes import core, review, stubs
 from app.graph.state import GraphInput, QualificationState
 
 
@@ -44,6 +48,7 @@ MERMAID_PATH = Path(__file__).resolve().parents[2] / "docs" / "grafo.mmd"
 MERMAID_AGENTIC_PATH = MERMAID_PATH.with_name("grafo-agentico.mmd")
 MERMAID_RAG_PATH = MERMAID_PATH.with_name("grafo-rag.mmd")
 MERMAID_GUARDRAIL_PATH = MERMAID_PATH.with_name("grafo-guardrail.mmd")
+MERMAID_REVIEW_PATH = MERMAID_PATH.with_name("grafo-revisao.mmd")
 
 
 @dataclass(frozen=True)
@@ -55,6 +60,7 @@ class GraphNodes:
     audit_log: Node = stubs.audit_log
     suggest_next_step: Node = stubs.suggest_next_step
     guardrail: Node = stubs.guardrail
+    request_review: Node = stubs.request_review
 
 
 def build_graph(
@@ -63,7 +69,11 @@ def build_graph(
     agentic: bool = False,
     next_step: bool = False,
     guardrail: bool = False,
+    human_review: bool = False,
+    checkpointer: BaseCheckpointSaver[str] | None = None,
 ) -> CompiledGraph:
+    if human_review and checkpointer is None:
+        raise ValueError("human_review exige um checkpointer: o state espera a decisão nele")
     nodes = nodes or GraphNodes()
     research = "agentic_research" if agentic else "research"
     graph = StateGraph(QualificationState, input_schema=GraphInput)
@@ -78,6 +88,9 @@ def build_graph(
         graph.add_node("suggest_next_step", nodes.suggest_next_step)
     if guardrail:
         graph.add_node("guardrail", nodes.guardrail)
+    if human_review:
+        graph.add_node("request_review", nodes.request_review)
+        graph.add_node("human_review", review.human_review)
 
     graph.add_edge(START, "validate_input")
     graph.add_conditional_edges(
@@ -103,14 +116,26 @@ def build_graph(
         {"continue": "assess", "fail": "audit_log"},
     )
     graph.add_edge("assess", "compute_score")
-    if next_step:
-        graph.add_edge("compute_score", "suggest_next_step")
-        graph.add_edge("suggest_next_step", "write_to_crm")
+    after_score = "suggest_next_step" if next_step else "write_to_crm"
+    if human_review:
+        graph.add_conditional_edges(
+            "compute_score",
+            core.route_review,
+            {"review": "request_review", "continue": after_score},
+        )
+        graph.add_conditional_edges(
+            "request_review",
+            core.route_review_pending,
+            {"wait": "human_review", "skip": after_score},
+        )
+        graph.add_edge("human_review", after_score)
     else:
-        graph.add_edge("compute_score", "write_to_crm")
+        graph.add_edge("compute_score", after_score)
+    if next_step:
+        graph.add_edge("suggest_next_step", "write_to_crm")
     graph.add_edge("write_to_crm", "audit_log")
     graph.add_edge("audit_log", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 def build_baseline_graph(research: Node, classify: Node, audit_log: Node) -> CompiledGraph:

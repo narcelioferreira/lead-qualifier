@@ -9,6 +9,7 @@ import httpx
 import pytest
 import respx
 from fastapi import FastAPI
+from langgraph.types import Command
 from pydantic import SecretStr
 
 from app.api import production
@@ -41,8 +42,8 @@ async def test_executor_roda_o_grafo_com_a_configuracao_da_api(
     calls: dict[str, Any] = {}
 
     class FakeGraph:
-        async def ainvoke(self, state: dict[str, Any]) -> dict[str, Any]:
-            calls["state"] = state
+        async def ainvoke(self, state: dict[str, Any], config: Any) -> dict[str, Any]:
+            calls["state"], calls["config"] = state, config
             return state
 
     @asynccontextmanager
@@ -55,7 +56,8 @@ async def test_executor_roda_o_grafo_com_a_configuracao_da_api(
     execute = production.graph_executor(_settings(api_write_crm=True, api_prompt_version="v2"))
     await execute(run_id, LeadInput.model_validate(LEAD))
 
-    assert calls["kwargs"] == {"prompt_version": "v2", "write_crm": True}
+    assert calls["kwargs"] == {"prompt_version": "v2", "write_crm": True, "checkpointer": None}
+    assert calls["config"] == {"configurable": {"thread_id": str(run_id)}}
     assert calls["state"]["run_id"] == str(run_id)
     assert calls["state"]["raw_input"]["company_name"] == LEAD["company_name"]
 
@@ -131,6 +133,106 @@ async def test_subida_marca_as_execucoes_orfas_como_failed(
     monkeypatch.setattr(production, "AuditRepository", FakeRepo)
     monkeypatch.setattr(production, "create_engine", lambda url: FakeEngine())
     monkeypatch.setattr(production, "session_factory", lambda engine: None)
+
+    @asynccontextmanager
+    async def fake_checkpointer(url: SecretStr) -> AsyncIterator[str]:
+        calls.append("checkpointer")
+        yield "saver"
+        calls.append("checkpointer fechado")
+
+    monkeypatch.setattr(production, "postgres_checkpointer", fake_checkpointer)
     async with production.production_services(_settings()) as services:
         assert set(services.checks) == {"postgres", "mcp", "ollama"}
-    assert calls == [production.ORPHAN_MESSAGE, "dispose"]
+    assert calls == [
+        production.ORPHAN_MESSAGE, "checkpointer", "checkpointer fechado", "dispose",
+    ]  # fmt: skip
+    calls.clear()
+    async with production.production_services(_settings(api_human_review=False)):
+        pass
+    assert calls == [production.ORPHAN_MESSAGE, "dispose"]  # sem revisão, sem checkpointer
+
+
+# --- revisão humana (T31) -------------------------------------------------------------------
+
+
+class FakeSaver:
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        self.deleted.append(thread_id)
+
+
+class Snapshot:
+    def __init__(self, interrupts: tuple[Any, ...]) -> None:
+        self.interrupts = interrupts
+
+
+class PausingGraph:
+    """Para na 1ª chamada (interrupt pendente) e termina na retomada."""
+
+    def __init__(self, paused: bool) -> None:
+        self.paused = paused
+        self.inputs: list[Any] = []
+
+    async def ainvoke(self, payload: Any, config: Any) -> dict[str, Any]:
+        self.inputs.append(payload)
+        if isinstance(payload, Command):
+            self.paused = False
+        return {}
+
+    async def aget_state(self, config: Any) -> Snapshot:
+        return Snapshot(("interrupt",) if self.paused else ())
+
+
+def _patch_graph(monkeypatch: pytest.MonkeyPatch, graph: PausingGraph) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def fake_graph(settings: Settings, **kwargs: Any) -> AsyncIterator[tuple[Any, Any]]:
+        seen.update(kwargs)
+        yield graph, None
+
+    monkeypatch.setattr(production, "production_graph", fake_graph)
+    return seen
+
+
+@pytest.mark.parametrize(("paused", "deleted"), [(True, False), (False, True)])
+async def test_checkpoint_so_fica_para_quem_espera_revisao(
+    monkeypatch: pytest.MonkeyPatch, paused: bool, deleted: bool
+) -> None:
+    saver, graph = FakeSaver(), PausingGraph(paused)
+    seen = _patch_graph(monkeypatch, graph)
+    run_id = uuid.uuid4()
+    await production.graph_executor(_settings(), saver)(run_id, LeadInput.model_validate(LEAD))  # type: ignore[arg-type]
+    assert seen["checkpointer"] is saver
+    assert saver.deleted == ([str(run_id)] if deleted else [])
+
+
+async def test_retomada_envia_a_decisao_e_apaga_o_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.schemas import ReviewDecision
+
+    saver, graph = FakeSaver(), PausingGraph(paused=True)
+    _patch_graph(monkeypatch, graph)
+    run_id = uuid.uuid4()
+    decision = ReviewDecision(action="override", tier="B", reviewer="Ana Revisora")  # type: ignore[arg-type]
+    await production.graph_resumer(_settings(), saver)(run_id, decision)  # type: ignore[arg-type]
+    [command] = graph.inputs
+    assert isinstance(command, Command)
+    assert command.resume == {
+        "action": "override", "tier": "B", "reviewer": "Ana Revisora", "comment": "",
+    }  # fmt: skip
+    assert saver.deleted == [str(run_id)]
+
+
+async def test_retomada_sem_interrupt_no_checkpoint_falha(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.schemas import ReviewDecision
+
+    saver, graph = FakeSaver(), PausingGraph(paused=False)
+    _patch_graph(monkeypatch, graph)
+    decision = ReviewDecision(action="approve", reviewer="Ana Revisora")
+    with pytest.raises(production.NoPendingReviewError):
+        await production.graph_resumer(_settings(), saver)(uuid.uuid4(), decision)  # type: ignore[arg-type]
+    assert graph.inputs == [] and saver.deleted == []

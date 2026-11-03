@@ -467,7 +467,8 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
                     prompt_version=state.get("prompt_version", "v1"),
                     lead=state.get("lead"),
                     status=status,
-                    steps=[*state.get("steps", []), step],
+                    # Execução retomada (T31): os passos até o pedido de revisão já foram gravados.
+                    steps=[*state.get("steps", [])[state.get("audited_steps", 0) :], step],
                     result=result,
                     errors=state.get("errors", []),
                     latency_ms=latency_ms(state),

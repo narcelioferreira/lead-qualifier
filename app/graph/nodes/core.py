@@ -57,6 +57,17 @@ def route_guardrail(state: QualificationState) -> str:
     return "block" if state.get("guardrail_blocked") else "continue"
 
 
+def route_review(state: QualificationState) -> str:
+    """Regra de incerteza da ontologia (T31): o lead para para a revisão humana."""
+    score = state.get("score")
+    return "review" if score is not None and score.needs_human_review else "continue"
+
+
+def route_review_pending(state: QualificationState) -> str:
+    """Sem o pedido gravado na auditoria ninguém retomaria o grafo: segue sem revisão."""
+    return "wait" if state.get("review_pending") else "skip"
+
+
 def route_research(state: QualificationState) -> str:
     """Volta ao `agentic_research` só se há consulta pendente e o teto fixo não foi atingido."""
     pending = state.get("research_next")
@@ -103,6 +114,7 @@ def build_result(state: QualificationState) -> QualificationResult:
         rationale=state.get("rationale", ""),
         prompt_version=state.get("prompt_version", PROMPT_VERSION),
         cost_usd=float(cost),
+        review=state.get("review"),
     )
 
 
@@ -114,9 +126,14 @@ def finalize(state: QualificationState) -> tuple[FinalStatus, QualificationResul
     if status in {"rejected", "failed"} or "score" not in state:
         return ("rejected" if status == "rejected" else "failed"), None
     result = build_result(state)
+    if result.review is not None:
+        return "completed", result  # o revisor já decidiu (T31)
     return ("needs_review" if result.needs_human_review else "completed"), result
 
 
 def latency_ms(state: QualificationState) -> int:
+    """Tempo da execução, sem a espera pela revisão humana (T31)."""
     started = state.get("started_at")
-    return max(0, round((time.time() - started) * 1000)) if started else 0
+    if not started:
+        return 0
+    return max(0, round((time.time() - started) * 1000) - state.get("review_wait_ms", 0))

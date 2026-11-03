@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal, TypedDict
 from app.audit.repository import StepRecord
 from app.ontology.models import LeadProfile
 from app.ontology.scoring import ScoreResult
-from app.schemas import Evidence, LeadInput, NextStep, QualificationResult
+from app.schemas import Evidence, HumanReview, LeadInput, NextStep, QualificationResult
 from app.security.guardrail import GuardrailVerdict
 from tools_mcp.kb import KBHit
 
@@ -54,6 +54,14 @@ class QualificationState(GraphInput, total=False):
     result: QualificationResult
     # Ids gravados no HubSpot pelo `write_to_crm` (company_id, contact_id, note_id).
     crm: dict[str, str]
+    # Revisão humana (T31): pedido gravado na auditoria (`review_pending`), epoch do pedido,
+    # passos já gravados com ele (o `audit_log` grava só os seguintes), a decisão aplicada e o
+    # tempo de espera (fora da latência da execução).
+    review_pending: bool
+    review_requested_at: float
+    audited_steps: int
+    review: HumanReview
+    review_wait_ms: int
     # Rota de cada chamada de modelo e decisões da política (T29), montadas pelo `audit_log`.
     routing_decisions: list[dict[str, Any]]
     steps: Annotated[list[StepRecord], operator.add]

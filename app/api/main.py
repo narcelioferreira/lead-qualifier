@@ -4,6 +4,7 @@ Rotas (`docs/00-arquitetura.md`, seção 7):
 - `POST /v1/leads/qualify` → 202 com `run_id` (o grafo roda em background, `app/api/runner.py`);
 - `GET /v1/runs/{run_id}` → status, resultado, justificativa, custo e ids do CRM;
 - `GET /v1/runs?status=...` → listagem (fila de revisão com `status=needs_review`);
+- `POST /v1/runs/{run_id}/review` → 202; retoma o grafo parado na revisão humana (T31);
 - `GET /health` → Postgres e MCP (obrigatórios) e Ollama (informativo), sem detalhe de erro.
 
 Controles: `X-API-Key` comparada em tempo constante em todo `/v1`; corpo limitado (413);
@@ -28,10 +29,16 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.runner import QueueFullError, RunQueue, RunStore
+from app.api.runner import (
+    NotAwaitingReviewError,
+    QueueFullError,
+    RunNotFoundError,
+    RunQueue,
+    RunStore,
+)
 from app.audit.repository import RunSummary
 from app.config import Settings
-from app.schemas import LeadInput
+from app.schemas import LeadInput, ReviewDecision
 
 HealthCheck = Callable[[], Awaitable[None]]
 HEALTH_TIMEOUT_S = 3.0
@@ -85,6 +92,9 @@ class RunOut(BaseModel):
     latency_ms: int | None
     crm_ids: dict[str, Any] | None
     errors: list[str]
+    # Revisão humana (T31): quando a execução parou esperando a decisão (a decisão aplicada
+    # fica em `result.review`).
+    review_requested_at: datetime | None = None
 
 
 class RunList(BaseModel):
@@ -261,7 +271,8 @@ def create_app(
         run = await svc.store.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="execução não encontrada")
-        return RunOut.model_validate(run.model_dump(exclude={"lead_input", "steps", "next_step"}))
+        hidden = {"lead_input", "steps", "next_step", "review"}
+        return RunOut.model_validate(run.model_dump(exclude=hidden))
 
     @v1.get("/runs", response_model=RunList, responses={401: {}})
     async def list_runs(
@@ -273,6 +284,38 @@ def create_app(
         """Execuções mais recentes primeiro. `status=needs_review` é a fila de revisão humana."""
         items = await svc.store.list_runs(status=status, limit=limit, offset=offset)
         return RunList(items=items, limit=limit, offset=offset)
+
+    @v1.post(
+        "/runs/{run_id}/review",
+        status_code=202,
+        response_model=QualifyAccepted,
+        responses={401: {}, 404: {}, 409: {}, 413: {}, 422: {}, 429: {}},
+    )
+    async def review(
+        run_id: uuid.UUID, decision: ReviewDecision, response: Response, svc: ServicesDep
+    ) -> QualifyAccepted:
+        """Decisão humana para uma execução parada em `needs_review`; o grafo retoma em background.
+
+        `approve` mantém o tier calculado; `override` exige `tier`. Uma decisão por execução:
+        a segunda recebe 409, assim como execução que não parou esperando revisão.
+        """
+        try:
+            await svc.queue.submit_review(run_id, decision)
+        except RunNotFoundError:
+            raise HTTPException(status_code=404, detail="execução não encontrada") from None
+        except NotAwaitingReviewError:
+            raise HTTPException(
+                status_code=409, detail="execução não está aguardando revisão humana"
+            ) from None
+        except QueueFullError:
+            raise HTTPException(
+                status_code=429,
+                detail="fila de qualificação cheia; tente mais tarde",
+                headers={"Retry-After": str(RETRY_AFTER_S)},
+            ) from None
+        url = f"/v1/runs/{run_id}"
+        response.headers["Location"] = url
+        return QualifyAccepted(run_id=run_id, status_url=url)
 
     app.include_router(v1)
 
