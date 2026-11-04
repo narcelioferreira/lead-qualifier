@@ -4,6 +4,7 @@ Grafo real do MVP com LLM, busca e site falsos; checkpointer em memória (o Post
 testes de integração) e auditoria no `MemoryAuditRepository`.
 """
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -226,3 +227,61 @@ async def test_failure_while_resuming_marks_the_run_failed() -> None:
             ).status_code == 202
             failed = await _poll(client, url, lambda b: b["status"] == "failed")
     assert failed["errors"] == ["falha interna (RuntimeError)"]  # sem o detalhe
+
+
+async def test_decision_arriving_before_the_first_job_ends_does_not_fail_the_run() -> None:
+    """Corrida: a decisão é reservada (`running`) antes de o job que parou terminar de conferir.
+
+    O job original não pode tomar o `running` da decisão como "terminou sem gravar".
+    """
+    system = System()
+    system.extractions = [UNSURE]
+    paused, release = asyncio.Event(), asyncio.Event()
+    execute = system.executor()
+
+    async def slow_to_finish(run_id: uuid.UUID, lead: LeadInput) -> None:
+        await execute(run_id, lead)  # o grafo para no `human_review`
+        paused.set()
+        await release.wait()  # o job ainda não fez a conferência final
+
+    queue = RunQueue(
+        system.store,
+        slow_to_finish,
+        resumer=system.resumer(),
+        prompt_version="v2",
+    )
+    app = create_app(settings(), Services(store=system.store, queue=queue))
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://api.test") as client:
+            response = await client.post("/v1/leads/qualify", json=LEAD, headers=AUTH)
+            url = response.json()["status_url"]
+            await paused.wait()
+            assert (
+                await client.post(f"{url}/review", json=APPROVE, headers=AUTH)
+            ).status_code == 202
+            release.set()  # a retomada espera a vaga (1 por vez) que o job original libera
+            done = await _poll(client, url, lambda b: b["status"] != "running")
+    assert (done["status"], done["errors"]) == ("completed", [])
+
+
+async def test_resume_that_does_not_record_the_result_is_failed() -> None:
+    """A exceção da corrida acima vale só para o job original, não para a própria retomada."""
+    system = System()
+    system.extractions = [UNSURE]
+
+    async def silent(run_id: uuid.UUID, decision: ReviewDecision) -> None:
+        return None  # "retomou" sem o `audit_log` gravar nada
+
+    async for client in system.client():
+        url, _ = await _qualify(client, "needs_review")
+    queue = RunQueue(system.store, system.executor(), resumer=silent, prompt_version="v2")
+    app = create_app(settings(), Services(store=system.store, queue=queue))
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://api.test") as client:
+            assert (
+                await client.post(f"{url}/review", json=APPROVE, headers=AUTH)
+            ).status_code == 202
+            failed = await _poll(client, url, lambda b: b["status"] == "failed")
+    assert failed["errors"] == ["execução terminou sem gravar o resultado"]

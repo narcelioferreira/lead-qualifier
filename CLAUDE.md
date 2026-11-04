@@ -70,7 +70,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T29: `app/routing/policy.py` (rota por etapa; fallback depois dos retries; **escalonamento da extração** para o `groq-large` com confiança < 0,7 ou score na fronteira; o plano dizia `assess_criteria`, mas é o `normalize` que decide os critérios), integrada ao `_ask` (`MvpDeps.policy`, sem política nada muda), `routing_decisions` no `audit_log`, `production_graph(routing=True)`. Real: L027 escalou e saiu D. 838 testes, `policy.py` 100%.
 - 🔄 T30 em andamento: parte 1 commitada (código, gráfico e dev da `routing`: 80% / κ 0,813); faltam 3 leads do `large_only` no dev, as rodadas únicas no test (cota da Groq em vários dias) e o `04-routing.md`.
 - ✅ T31: revisão humana (`app/graph/nodes/review.py`: `request_review` + `human_review` com `interrupt()`), checkpointer no Postgres com desserialização restrita aos tipos do state e checkpoint apagado de quem não parou (`app/graph/checkpoint.py`), `POST /v1/runs/{id}/review` (uma decisão por execução, `approve` ou `override` do tier com o score da rubrica mantido), migration `0005`. Postgres real e restart do container (`scripts/review_restart_check.sh`, L042): a execução parada sobrevive e é retomada. 881 testes.
-- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois T32 (MCP `lead-qualifier`). Commits sem `Co-Authored-By`.
+- ✅ T32: MCP `lead-qualifier` em `/mcp` na API (`app/api/mcp_server.py`: `qualify_lead` espera até 25 s, `get_run`; mesma `API_KEY`, fila e auditoria da REST; sem tool de revisão, de propósito), `scripts/mcp_qualifier_demo.py`. Corrigida uma corrida da T31 no `RunQueue` (decisão reservada antes do fim do job que parou). 905 testes.
+- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois T33 (hardening). Commits sem `Co-Authored-By`.
 
 ## Comandos
 ```bash
@@ -89,5 +90,6 @@ uv run python scripts/ingest_kb.py     # indexa a base de conhecimento (exige no
 uv run python -m evals.kb_eval         # hit rate@3 da busca na base
 uv run python scripts/qualify.py --agentic --prompt-version v3 L002   # pesquisa agêntica (T25)
 uv run python scripts/qualify.py --next-step --prompt-version v4 L024 # próximo passo com RAG (T26)
+uv run python scripts/mcp_qualifier_demo.py L024   # MCP lead-qualifier em 127.0.0.1:8000/mcp (T32)
 uv run python -m evals.judge run L024 ...  # gera e julga o próximo passo (dev); `agreement` compara com o autor
 ```

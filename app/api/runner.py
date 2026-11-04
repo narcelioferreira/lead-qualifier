@@ -118,7 +118,9 @@ class RunQueue:
             if claim == "not_awaiting":
                 raise NotAwaitingReviewError
             job = partial(resumer, run_id, decision)
-            task = asyncio.create_task(self._run(run_id, job), name=f"review-{run_id}")
+            task = asyncio.create_task(
+                self._run(run_id, job, resuming=True), name=f"review-{run_id}"
+            )
         finally:
             self._starting -= 1
         self._track(task)
@@ -127,7 +129,9 @@ class RunQueue:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    async def _run(self, run_id: uuid.UUID, job: Callable[[], Awaitable[None]]) -> None:
+    async def _run(
+        self, run_id: uuid.UUID, job: Callable[[], Awaitable[None]], *, resuming: bool = False
+    ) -> None:
         started = time.monotonic()
         try:
             async with self._slots:
@@ -140,7 +144,10 @@ class RunQueue:
             await self._fail(run_id, f"falha interna ({type(exc).__name__})", started)
             return
         run = await self._store.get_run(run_id)
-        if run is not None and run.status == "running":
+        # Com a decisão humana já reservada, o `running` é da retomada (que roda em outro job),
+        # e não deste, que parou no `human_review`.
+        claimed = not resuming and run is not None and run.review is not None
+        if run is not None and run.status == "running" and not claimed:
             # O grafo terminou, mas o `audit_log` não conseguiu gravar o resultado.
             await self._fail(run_id, "execução terminou sem gravar o resultado", started)
 

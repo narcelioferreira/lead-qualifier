@@ -54,6 +54,23 @@ Status de uma execução: `running` (aceita, na fila ou rodando), `completed`, `
 
 Ciclo: `running` → `needs_review` (o grafo parou; `review_requested_at` preenchido, sem `finished_at`) → `running` (decisão reservada, uma só) → `completed`. A latência gravada não conta a espera pelo revisor.
 
+## MCP `lead-qualifier` (T32)
+Montado em `/mcp` na própria API (Streamable HTTP, sem estado entre requisições, resposta JSON). Autenticação pela mesma `API_KEY`, como `Authorization: Bearer <API_KEY>` ou `X-API-Key`; `Host` e `Origin` só da allowlist (`API_MCP_ALLOWED_HOSTS`).
+
+| Tool | Entrada | Saída |
+|---|---|---|
+| `qualify_lead` | `lead`: `LeadInput` | `RunOut`, o mesmo do `GET /v1/runs/{id}`. Entra na mesma fila da REST e espera até 25 s; se o grafo ainda estiver rodando, volta `status=running` |
+| `get_run` | `run_id`: UUID | `RunOut` |
+
+Erros viram resultado de tool com `isError`: argumento inválido ou desconhecido (só o local, sem o valor enviado), fila cheia e execução não encontrada. Não há tool de revisão: `needs_review` é decidido por uma pessoa em `POST /v1/runs/{id}/review`.
+
+Clientes (com a API em `127.0.0.1:8000`):
+- **Claude Code:** `claude mcp add --transport http lead-qualifier http://127.0.0.1:8000/mcp --header "Authorization: Bearer $API_KEY"`;
+- **Cursor** (`~/.cursor/mcp.json`): `{"mcpServers": {"lead-qualifier": {"url": "http://127.0.0.1:8000/mcp", "headers": {"Authorization": "Bearer ${env:API_KEY}"}}}}`;
+- **terminal:** `uv run python scripts/mcp_qualifier_demo.py L024`.
+
+O MCP Inspector no navegador não conecta direto (o preflight CORS não leva a chave, como no `lead-tools` da T19); a API não abre CORS para isso.
+
 ## Settings (variáveis de ambiente)
 | Variável | Obrigatória | Observação |
 |---|---|---|
@@ -68,5 +85,6 @@ Ciclo: `running` → `needs_review` (o grafo parou; `review_requested_at` preenc
 | `API_MAX_CONCURRENT_RUNS`, `API_MAX_PENDING_RUNS` | — | Fila: 1–4 em paralelo (padrão 1) e 1–100 aceitas e não terminadas (padrão 10) |
 | `API_MAX_BODY_BYTES` | — | 1 KB–1 MB (padrão 32 KB) |
 | `API_HUMAN_REVIEW` | — | Revisão humana com checkpointer no Postgres (padrão `true`, T31) |
+| `API_MCP_ALLOWED_HOSTS` | — | `Host` aceitos no `/mcp`, separados por vírgula (padrão `127.0.0.1:*,localhost:*`, T32) |
 
 Todos os segredos usam `SecretStr` e não aparecem em `repr`, logs nem tracebacks (há teste para isso).

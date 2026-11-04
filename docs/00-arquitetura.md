@@ -157,7 +157,7 @@ A política é feita de regras, sem LLM-router, porque assim fica barata, testá
 | `hubspot_associate(contact_id, company_id)` | Associa contato e empresa |
 | `hubspot_create_note(body, run_id, company_ids, contact_ids)` | Cria a Note com a justificativa (HTML escapado). Idempotente por `run_id` |
 
-**Servidor `lead-qualifier`** (montado em `/mcp` na própria API), com as tools `qualify_lead(lead)` e `get_run(run_id)`. O agente pode ser usado diretamente no Claude Desktop, no Cursor ou no MCP Inspector.
+**Servidor `lead-qualifier`** (T32, `app/api/mcp_server.py`, montado em `/mcp` na própria API), com as tools `qualify_lead(lead)` e `get_run(run_id)`. O agente pode ser usado diretamente por um cliente MCP (Claude Code, Cursor ou o script `scripts/mcp_qualifier_demo.py`). Usa a mesma `API_KEY`, a mesma fila e a mesma auditoria da REST: `qualify_lead` espera até 25 s pelo resultado e, se o grafo demorar mais, devolve `running` para o cliente seguir com `get_run`. Sem estado entre requisições, então um restart da API não derruba sessão de cliente. **Não há tool de revisão humana:** a decisão de um lead `needs_review` fica com uma pessoa, pela REST, e não com o LLM do cliente.
 
 O grafo consome o `lead-tools` pelo cliente oficial do SDK `mcp` 2.x (`app/mcp_client.py`). Assim os segredos do HubSpot e do Tavily ficam só no container de tools. O `langchain-mcp-adapters` foi descartado na T20: a versão 0.3.2 exige `mcp<2`, incompatível com o servidor da T19. Como o grafo tem arestas fixas e não entrega as tools ao LLM, o adapter não traria ganho.
 

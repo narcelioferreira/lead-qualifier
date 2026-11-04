@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     api_max_body_bytes: int = Field(default=32_768, ge=1024, le=1_048_576)
     # Revisão humana (T31): lead com a regra de incerteza para e espera `POST .../review`.
     api_human_review: bool = True
+    # MCP `lead-qualifier` em /mcp (T32): `Host` aceitos (proteção contra DNS rebinding).
+    api_mcp_allowed_hosts: str = "127.0.0.1:*,localhost:*"
 
     @field_validator("api_key")
     @classmethod
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
         if value.username or value.password:
             raise ValueError("TOOLS_MCP_URL não pode ter credenciais; use TOOLS_MCP_TOKEN")
         return value
+
+    def mcp_allowed_hosts(self) -> list[str]:
+        return [h.strip() for h in self.api_mcp_allowed_hosts.split(",") if h.strip()]
 
 
 @lru_cache

@@ -18,8 +18,6 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
@@ -29,6 +27,9 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.contracts import QualifyAccepted, RunOut, RunStatus, run_out
+from app.api.mcp_server import build_server as build_mcp_server
+from app.api.mcp_server import mcp_route
 from app.api.runner import (
     NotAwaitingReviewError,
     QueueFullError,
@@ -45,7 +46,6 @@ HEALTH_TIMEOUT_S = 3.0
 REQUIRED_CHECKS = ("postgres", "mcp")
 RETRY_AFTER_S = 60
 MAX_VALIDATION_ERRORS = 10
-RunStatus = Literal["running", "completed", "failed", "needs_review", "rejected"]
 
 
 @dataclass
@@ -55,46 +55,19 @@ class Services:
     checks: Mapping[str, HealthCheck] = field(default_factory=dict)
 
 
-def get_services(request: Request) -> Services:
-    built: Services = request.app.state.services
+def get_services_of(app: FastAPI) -> Services:
+    built: Services = app.state.services
     return built
+
+
+def get_services(request: Request) -> Services:
+    return get_services_of(request.app)
 
 
 ServicesDep = Annotated[Services, Depends(get_services)]
 
 
 # --- contratos da API ----------------------------------------------------------------------
-
-
-class QualifyAccepted(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    run_id: uuid.UUID
-    status: Literal["running"] = "running"
-    status_url: str
-
-
-class RunOut(BaseModel):
-    """Execução sem os passos internos (esses ficam na auditoria do banco)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    run_id: uuid.UUID
-    status: RunStatus
-    created_at: datetime
-    finished_at: datetime | None
-    prompt_version: str
-    tier: str | None
-    score: Decimal | None
-    confidence: Decimal | None
-    result: dict[str, Any] | None
-    cost_usd: Decimal
-    latency_ms: int | None
-    crm_ids: dict[str, Any] | None
-    errors: list[str]
-    # Revisão humana (T31): quando a execução parou esperando a decisão (a decisão aplicada
-    # fica em `result.review`).
-    review_requested_at: datetime | None = None
 
 
 class RunList(BaseModel):
@@ -191,7 +164,8 @@ def create_app(
         if services is not None:
             app.state.services = services
             try:
-                yield
+                async with run_mcp_sessions():
+                    yield
             finally:
                 await services.queue.shutdown()
             return
@@ -200,7 +174,8 @@ def create_app(
         async with build_services(settings) as built:
             app.state.services = built
             try:
-                yield
+                async with run_mcp_sessions():
+                    yield
             finally:
                 await built.queue.shutdown()
 
@@ -271,8 +246,7 @@ def create_app(
         run = await svc.store.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="execução não encontrada")
-        hidden = {"lead_input", "steps", "next_step", "review"}
-        return RunOut.model_validate(run.model_dump(exclude=hidden))
+        return run_out(run)
 
     @v1.get("/runs", response_model=RunList, responses={401: {}})
     async def list_runs(
@@ -335,6 +309,15 @@ def create_app(
         if not ok:
             response.status_code = 503
         return Health(status="ok" if ok else "degraded", checks=checks)
+
+    # Servidor MCP `lead-qualifier` (T32): as mesmas fila, auditoria e chave da REST.
+    mcp = build_mcp_server(lambda: get_services_of(app))
+    mcp_endpoint, run_mcp_sessions = mcp_route(
+        mcp,
+        api_key=settings.api_key.get_secret_value(),
+        allowed_hosts=settings.mcp_allowed_hosts(),
+    )
+    app.router.routes.append(mcp_endpoint)
 
     app.add_middleware(BodyLimit, max_bytes=settings.api_max_body_bytes)
     return app

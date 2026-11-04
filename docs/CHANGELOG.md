@@ -853,3 +853,44 @@
   - a condição `review IS NULL` do `claim_review` era redundante com o status (nenhuma mutação a pegava) e saiu.
 - **Restart do container:** `scripts/review_restart_check.sh` (L042 ou L031 do dev) qualifica pela API até `needs_review`, reinicia o container, confere que a execução continua na fila, envia a decisão, recebe 409 na segunda e espera o `completed`. **Real (3/11, container reconstruído, migration 0005 aplicada pelo `migrate`):** o L042 parou em `needs_review` (tier C), o container da API foi reiniciado, a execução continuou na fila, o `approve` retomou o grafo do checkpoint e a execução terminou `completed` com a Note no HubSpot. No banco: 9 passos sem duplicata (`request_review` → `human_review` → `write_to_crm` → `audit_log`), latência de 6,4 s sem contar a espera, custo de US$ 0,00034 e nenhum checkpoint sobrando.
 - **Limitação conhecida:** se a API cair **durante** uma retomada, a varredura de execuções órfãs da subida marca a execução como `failed`, embora o checkpoint ainda tenha a revisão pendente. A execução parada esperando a decisão não é afetada.
+
+## T32: Servidor MCP `lead-qualifier`
+- **Servidor** (`app/api/mcp_server.py`, `mcp` 2.x): montado em `/mcp` na própria API, com as tools `qualify_lead(lead)` e `get_run(run_id)`. O agente inteiro vira uma tool para clientes MCP (Claude Code, Cursor ou `scripts/mcp_qualifier_demo.py`).
+  - **Mesma fila, auditoria e chave da REST:** `qualify_lead` passa pelo `RunQueue.submit` (1 execução por vez, até 10 pendentes) e espera até 25 s pelo resultado, abaixo do tempo limite dos clientes. Se o grafo demorar mais, a tool devolve `running` e o cliente segue com `get_run`. A saída é o mesmo `RunOut` do `GET /v1/runs/{id}` (contratos extraídos para `app/api/contracts.py`), sem a entrada nem os passos.
+  - **Sem estado entre requisições** (`stateless_http`, resposta JSON): um restart da API não derruba sessão de cliente, e a chamada longa dispensa SSE.
+  - **Sem tool de revisão humana, de propósito:** com ela, o LLM do cliente poderia aprovar o próprio resultado. Lead `needs_review` continua sendo decidido por uma pessoa em `POST /v1/runs/{id}/review`.
+- **Controles:**
+  - a mesma `API_KEY`, como `Authorization: Bearer` (o padrão dos clientes MCP) ou `X-API-Key`, comparada em tempo constante;
+  - allowlist de `Host` e `Origin` (`API_MCP_ALLOWED_HOSTS`);
+  - argumentos desconhecidos recusados (`StrictMCPServer` da T19);
+  - erro de validação só com o local, porque o SDK ecoa o valor enviado e o texto do lead pode ser injeção ou dado pessoal;
+  - corpo limitado pelo mesmo `BodyLimit` da API (413);
+  - as instruções do servidor pedem ao cliente que trate o texto do resultado como dado.
+- **Teste:** `tests/api/test_mcp_qualifier.py` (22), com o cliente MCP in-process sobre o grafo do MVP com LLM falso:
+  - só as duas tools, com anotações honestas;
+  - resultado na mesma chamada, sem e-mail nem passos, igual ao `get_run`;
+  - execução lenta devolve `running`, e o `get_run` acompanha;
+  - lead inválido, campo extra, injeção com e-mail inválido e argumento desconhecido são recusados sem eco e nunca entram na fila;
+  - fila cheia, execução inexistente e id inválido sem eco;
+  - falha do grafo vira `failed` sem detalhe.
+  - Pelo HTTP da própria API:
+    - 401 sem a chave (4 casos);
+    - Bearer e `X-API-Key` aceitos;
+    - 421 com `Host` estranho, 403 com `Origin` de outro site e o Inspector local aceito;
+    - `tools/call` de ponta a ponta com a mesma saída da REST;
+    - 413 antes do MCP.
+  - **Mutação:** 7 de 7 controles pegos (saneamento do erro, chave, `Origin`, `Host`, argumento desconhecido, espera e entrada oculta).
+- **Container real** (reconstruído): 401 sem chave, 421 com `Host` estranho, as duas tools listadas pelo cliente oficial, erro sem eco para lead inválido e execução inexistente. Nada foi qualificado, para não gastar Groq nem gravar no HubSpot. A demo com qualificação real fica para o 📸 vídeo.
+- **Problema corrigido (bug da T31 achado aqui):** um teste da revisão falhou de forma intermitente sob `--cov`. A causa era uma corrida no `RunQueue`:
+  - a decisão humana chegava (status `running`, reservada) antes de o job que parou no `human_review` fazer a conferência final;
+  - o job tomava esse `running` como "terminou sem gravar o resultado" e marcava `failed`, e a retomada nem conseguia gravar;
+  - na produção, a janela é a do `_settle` depois do `interrupt()`.
+  - **Correção:** o job original ignora o `running` quando a decisão já foi reservada; a própria retomada continua conferida.
+  - **Testes:** `test_decision_arriving_before_the_first_job_ends_does_not_fail_the_run` (determinístico; falhava antes da correção) e `test_resume_that_does_not_record_the_result_is_failed`. Mutação: 2 de 2 pegas.
+- **`make check`** (pelas ferramentas do `.venv`, rodado duas vezes): 905 testes, cobertura de 94% (`mcp_server.py`, `contracts.py` e `runner.py` com 100%), ruff, mypy strict, bandit, detect-secrets e pip-audit.
+- **Segurança:**
+  - ASI03: a chave da API no `/mcp`, mais `Host` e `Origin`;
+  - ASI01/ASI09: sem eco no erro, texto do resultado tratado como dado e sem tool de revisão;
+  - ASI08: a mesma fila limitada.
+  - Atualizados `06-seguranca-agentes.md`, `00-arquitetura.md` (seção 6) e `03-contratos.md` (tools, clientes e `API_MCP_ALLOWED_HOSTS`).
+- **Limitação:** o MCP Inspector no navegador não conecta direto, porque o preflight CORS não leva a chave (como na T19), e a API não abre CORS para isso.
