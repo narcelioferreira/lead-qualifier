@@ -240,14 +240,15 @@ lead-qualifier/
 ## 13. Stack fechada
 Python 3.12 · uv · LangGraph (+ `langgraph-checkpoint-postgres`) · `mcp` 2.x (servidor `MCPServer` e cliente oficial) · Groq API (gpt-oss-20b + gpt-oss-120b, pesos abertos fixos) · Ollama (embeddings e SLM de reserva do guardrail; 3 SLMs de 1B a 4B comparados por benchmark na T28) · Postgres 16 + pgvector · SQLAlchemy + Alembic · FastAPI + Uvicorn · Tavily · trafilatura · httpx + tenacity · structlog · pytest + respx · ruff + mypy · Docker Compose · GitHub Actions.
 
-## 14. ADRs a registrar em `docs/adr/`
-1. LangGraph como orquestrador, em vez de chain ou PydanticAI
-2. "O LLM extrai, o código pontua" (ontologia + score determinístico)
-3. Roteamento por regras, em vez de LLM-router
-4. MCP como fronteira das integrações externas
-5. pgvector, em vez de um vector DB dedicado
-6. Guardrail no mini, com SLM local de reserva (resultado do benchmark da T28)
-7. Fora do escopo: Langflow, PydanticAI e Deep Agents (este último fica para a v2)
+## 14. ADRs
+Registrados em [`docs/adr/`](adr/README.md):
+1. [LangGraph como orquestrador, em vez de chain ou PydanticAI](adr/0001-langgraph.md)
+2. ["O LLM extrai, o código pontua" (ontologia + score determinístico)](adr/0002-llm-extrai-codigo-pontua.md)
+3. [Roteamento por regras, em vez de LLM-router](adr/0003-roteamento-por-regras.md)
+4. [MCP como fronteira das integrações externas](adr/0004-mcp-como-fronteira.md)
+5. [pgvector, em vez de um vector DB dedicado](adr/0005-pgvector.md)
+6. [Guardrail no mini, com SLM local de reserva (resultado do benchmark da T28)](adr/0006-guardrail.md)
+7. [Fora do escopo: Langflow, PydanticAI e Deep Agents (este último fica para a v2)](adr/0007-fora-do-escopo.md)
 
 ## 15. Roadmap de implementação (incremental e medido)
 1. **Semana 1:** contexto, ontologia, `rubric.yaml`, contratos, repositório, CI, dataset e rotulagem

@@ -358,6 +358,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, CH
 | [04 · Plano de tasks](docs/04-plano-de-tasks.md) | As 36 tasks com testes e critérios de aceite |
 | [05 · Fontes do dataset](docs/05-fontes-do-dataset.md) | Fontes públicas, montagem e protocolo de rotulagem |
 | [06 · Segurança do agente](docs/06-seguranca-agentes.md) | Modelo de ameaças, OWASP ASI/AST, testes por controle e riscos residuais |
+| [ADRs](docs/adr/README.md) | As 7 decisões de arquitetura, com contexto, consequências e alternativas |
 | [CHANGELOG](docs/CHANGELOG.md) | O que foi feito em cada task, decisões e problemas corrigidos |
 
 > **Sobre o dataset:** as empresas são reais e públicas; cargos, mensagens e e-mails são inventados. As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (gpt-oss, via Groq), para evitar o viés de o modelo avaliar o próprio texto.
