@@ -71,7 +71,9 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - 🔄 T30 em andamento: parte 1 commitada (código, gráfico e dev da `routing`: 80% / κ 0,813); faltam 3 leads do `large_only` no dev, as rodadas únicas no test (cota da Groq em vários dias) e o `04-routing.md`.
 - ✅ T31: revisão humana (`app/graph/nodes/review.py`: `request_review` + `human_review` com `interrupt()`), checkpointer no Postgres com desserialização restrita aos tipos do state e checkpoint apagado de quem não parou (`app/graph/checkpoint.py`), `POST /v1/runs/{id}/review` (uma decisão por execução, `approve` ou `override` do tier com o score da rubrica mantido), migration `0005`. Postgres real e restart do container (`scripts/review_restart_check.sh`, L042): a execução parada sobrevive e é retomada. 881 testes.
 - ✅ T32: MCP `lead-qualifier` em `/mcp` na API (`app/api/mcp_server.py`: `qualify_lead` espera até 25 s, `get_run`; mesma `API_KEY`, fila e auditoria da REST; sem tool de revisão, de propósito), `scripts/mcp_qualifier_demo.py`. Corrigida uma corrida da T31 no `RunQueue` (decisão reservada antes do fim do job que parou). 905 testes.
-- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois T33 (hardening). Commits sem `Co-Authored-By`.
+- 🔄 T33 em andamento (parte 1): `tests/security/` com mocks, 140 testes (131 verdes + 9 `xfail` estritos com lacunas registradas em `06-seguranca-agentes.md`). Corrigir as lacunas só depois da T30, porque muda o comportamento em avaliação.
+- 🔄 T35 em andamento (parte 1): os 7 ADRs em `docs/adr/`.
+- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois o resto da T33. Commits sem `Co-Authored-By`.
 
 ## Comandos
 ```bash

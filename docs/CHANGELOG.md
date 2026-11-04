@@ -894,3 +894,25 @@
   - ASI08: a mesma fila limitada.
   - Atualizados `06-seguranca-agentes.md`, `00-arquitetura.md` (seção 6) e `03-contratos.md` (tools, clientes e `API_MCP_ALLOWED_HOSTS`).
 - **Limitação:** o MCP Inspector no navegador não conecta direto, porque o preflight CORS não leva a chave (como na T19), e a API não abre CORS para isso.
+
+## T35 (parte 1): ADRs
+- **`docs/adr/`:** os 6 ADRs que faltavam (`0001` LangGraph, `0002` o LLM extrai e o código pontua, `0003` roteamento por regras, `0004` MCP como fronteira, `0005` pgvector e `0007` fora do escopo), mais um índice em `docs/adr/README.md`. O `0006` é da T28. Ligados em `00-arquitetura.md` (seção 14) e no README.
+- **Fontes:** decisões e números vêm do CHANGELOG, dos relatórios em `evals/reports/` e do código. As alternativas que não foram implementadas nem medidas estão marcadas assim em cada ADR. O `0003` não cita resultado do test da `routing`: a rodada da T30 ainda não terminou, e a comparação de custo fica no `04-routing.md`.
+- **Teste:** só documentação. `make check` verde (ver a entrada seguinte).
+- **Falta na T35:** README final, diagramas e o teste em um clone limpo.
+
+## T33 (parte 1): suíte de ataques com mocks
+- **`tests/security/`** (140 testes, sem rede e sem Groq), com o grafo real com guardrail e o `v6`. O LLM falso faz o papel do modelo enganado, então a suíte confere o que o **código** garante, e não se o modelo cai no ataque:
+  - `test_message_injection.py`: 16 ataques conhecidos na mensagem e 3 no cargo e no nome, sem nenhuma chamada de modelo; 6 textos legítimos parecidos com ataque, sem bloqueio; 5 ataques sutis barrados pelo guardrail ou pela flag da extração; mesma extração, mesma nota, com ou sem o ataque; nota do modelo recusada pelo schema; bloco delimitado; e-mail fora do prompt; link e HTML fora da justificativa;
+  - `test_html_injection.py`: `SiteFetcher` real, com a rede simulada. Texto que sobrevive ao trafilatura (`hidden`, fonte zero, `<template>`) é pego pelo detector; o que ele remove (`display:none`, comentário, script, `alt`, `aria-label`) nunca chega ao modelo; página "sobre", trecho além do corte de 1.000 caracteres e resultado de busca de terceiro;
+  - `test_huge_message.py`: acima do limite (inclusive expansão do NFKC) rejeitado sem eco; prompt limitado; ataque no fim da maior mensagem e atrás de 100K invisíveis detectado; orçamento esgotado para a execução; regex sem explosão de tempo; 422 e 413 na API, sem criar execução;
+  - `test_unicode.py`: 15 ofuscações detectadas na mensagem e no site; invisíveis fora dos prompts; texto legítimo em cirílico, grego, chinês e com emoji preservado; domínio homógrafo rejeitado.
+- **Lacunas encontradas e não corrigidas** (`xfail(strict=True)`, 9 casos, registradas em `06-seguranca-agentes.md`). A correção muda o comportamento em avaliação e misturaria versões nas rodadas da T30, então fica para depois dela:
+  1. 7 evasões das regras: seletor de variação, cirílico (2), grego, U+3164, U+2800 e palavra colada;
+  2. justificativa copiando o system prompt;
+  3. CNAE escrito pelo próprio lead dá certeza alta no setor.
+- **Mutação (em uma cópia, sem tocar no repositório):** 15 de 16 pegas. A 16ª desliga o limite de corpo da API só pelo `Content-Length` e não derruba teste, porque a contagem do que chega responde 413 na mesma; desligar as duas camadas derruba.
+- **Legibilidade:** os caracteres invisíveis e homóglifos ficam em escape (`\u200b`), porque literais no código não dão para revisar a olho.
+- **Problema corrigido no próprio teste:** a checagem de vazamento comparava o texto cru com o JSON do resultado. Um texto com quebra de linha nunca casava, e o teste passava sem conferir nada. Apareceu porque o `xfail` estrito acusou o XPASS. Agora compara com o mesmo escape do JSON.
+- **Segurança:** só testes e documentação; nenhuma linha de `app/` ou `tools_mcp/` mudou, para não afetar as rodadas da T30.
+- **Falta na T33:** corrigir as lacunas, ataques reais ao mini (G011, G014), timeout global por lead, revisão de segredos e permissões e `/security-review`.
