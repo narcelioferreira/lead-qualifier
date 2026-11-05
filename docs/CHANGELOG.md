@@ -946,3 +946,15 @@ Decisão do autor depois da auditoria: a documentação apresentava o guardrail 
 - **Sem efeito na T30:** `evals/` monta o próprio grafo, e o digest de integridade (`3bb59143…`) não mudou.
 - **Não testado:** o guardrail na API real, que exige rebuild do container e cota da Groq. O mock não mede se o modelo cai no ataque.
 - **Segurança:** ASI01 (filtro de entrada no caminho real), ASI08 (fail closed na subida) e documentação coerente com o código.
+
+## T30 (parte 2): routing × large_only no test e relatório
+- **Rodada única no test:** `routing` 70,0% / κ 0,733 e `large_only` 66,7% / κ 0,681, em partes nos dias 4/11 e 5/11 por causa da cota. Dev da `large_only` concluído: 75,0% / κ 0,772 (`routing` no dev: 80,0% / κ 0,813).
+- **Conclusão (`evals/reports/04-routing.md`):** a `routing` custou 35% da `large_only` (US$ 0,000968 × US$ 0,002762 por lead, equivalente), sem perda de acurácia medida. A diferença está no ruído (McNemar p = 1,0; mesmo tier em 27 de 30), então o relatório não afirma que o roteamento é mais preciso. Nenhuma comparação entre configurações vizinhas chega a p < 0,05 no test.
+- **Roteamento:** 92,9% dos tokens no mini; 5 escalonamentos em 30 leads (4 por fronteira, 1 por confiança), todos com o mesmo tier da `large_only`. **Nenhum fallback**, conferido nos passos da auditoria.
+- **Guardrail:** 4/4 ataques desqualificados nas duas configurações (`rag`: 3/4) e 0/26 falsos alarmes. O spam L034 agora é barrado.
+- **Achados, sem ajuste:** B → A continua sendo o erro mais frequente (5 de 9 leads B na `routing`) e também acontece no modelo maior; L013 (homônimo) segue errado; a latência alta do mini em `normalize`, `assess` e `suggest_next_step` não foi investigada.
+- **Registrados no relatório:** o L039 refeito no dev (429 por rodada em paralelo) e o timeout do L003 no test, nas duas configurações.
+- **Integridade da rodada:** digest `3bb59143…` em todas as partes. Os commits entre as partes não mudam o caminho da avaliação. Os números **não** valem para a API, que usa o grafo do MVP com `v6`.
+- **Cota:** no pico de 5/11, 177.723 tokens do `groq-large` e 90.832 do `groq-mini` em 24 h. A `large_only` foi limitada até o lead 28 e os 2 últimos só rodaram depois de conferir o gasto real.
+- **Gráfico:** `evals/reports/04-routing-custo-acuracia.svg`; 📸 `docs/linkedin/t30-custo-acuracia.png` e rascunho em `docs/linkedin/t30-routing.md`.
+- **Segurança:** arquivos novos conferidos antes do commit: sem ID de organização da Groq nem e-mail. Nenhum código mudou nesta parte.

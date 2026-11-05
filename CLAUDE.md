@@ -68,14 +68,14 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T27: configuração `rag` (`evals/run.py`), `evals/compare.py` (diferença pareada, McNemar) e prompts `v5` (3 regras no normalize). Dev v5 90% / κ 0,884 × mvp 95%; **test v5 66,7% / κ 0,662 × mvp 60,0% / κ 0,560** (McNemar p 0,69, no ruído), 2,2× tokens. Judge do próximo passo com RAG 5/8 × passo padrão 2/8. `03-rag.md`. **Achados:** fonte de outro domínio (L013, homônimo) e porte contraditório (L003).
 - ✅ T28: nó `guardrail` (regras → mini → SLM de reserva, fail open, fora de escopo só registra), prompts `v6`, `evals/guardrail_bench.py` + `guardrail_set.jsonl` (48 sintéticos + dev). Nenhum SLM de 1B a 4B atingiu a meta em CPU (qwen3:4b 64%, qwen3:1.7b 33%, gemma3:1b bloqueia 30/32 legítimos); **mini 22/24 injeções e 0/32 legítimos** → ADR `docs/adr/0006-guardrail.md`: guardrail no mini, `qwen3:4b` de reserva. 803 testes.
 - ✅ T29: `app/routing/policy.py` (rota por etapa; fallback depois dos retries; **escalonamento da extração** para o `groq-large` com confiança < 0,7 ou score na fronteira; o plano dizia `assess_criteria`, mas é o `normalize` que decide os critérios), integrada ao `_ask` (`MvpDeps.policy`, sem política nada muda), `routing_decisions` no `audit_log`, `production_graph(routing=True)`. Real: L027 escalou e saiu D. 838 testes, `policy.py` 100%.
-- 🔄 T30 em andamento: parte 1 commitada (código, gráfico e dev da `routing`: 80% / κ 0,813); faltam 3 leads do `large_only` no dev, as rodadas únicas no test (cota da Groq em vários dias) e o `04-routing.md`.
+- ✅ T30: dev e rodada única no test. `routing` 70,0% / κ 0,733 × `large_only` 66,7% / κ 0,681 (McNemar p = 1,0, mesmo tier em 27 de 30), a 35% do custo, 92,9% dos tokens no mini, 5 escalonamentos, nenhum fallback. `04-routing.md`. Os números não valem para a API (grafo do MVP + `v6`).
 - ✅ T31: revisão humana (`app/graph/nodes/review.py`: `request_review` + `human_review` com `interrupt()`), checkpointer no Postgres com desserialização restrita aos tipos do state e checkpoint apagado de quem não parou (`app/graph/checkpoint.py`), `POST /v1/runs/{id}/review` (uma decisão por execução, `approve` ou `override` do tier com o score da rubrica mantido), migration `0005`. Postgres real e restart do container (`scripts/review_restart_check.sh`, L042): a execução parada sobrevive e é retomada. 881 testes.
 - ✅ T32: MCP `lead-qualifier` em `/mcp` na API (`app/api/mcp_server.py`: `qualify_lead` espera até 25 s, `get_run`; mesma `API_KEY`, fila e auditoria da REST; sem tool de revisão, de propósito), `scripts/mcp_qualifier_demo.py`. Corrigida uma corrida da T31 no `RunQueue` (decisão reservada antes do fim do job que parou). 905 testes.
 - 🔄 T33 em andamento (parte 1): `tests/security/` com mocks, 140 testes (131 verdes + 9 `xfail` estritos com lacunas registradas em `06-seguranca-agentes.md`). Corrigir as lacunas só depois da T30, porque muda o comportamento em avaliação.
 - 🔄 T35 em andamento (parte 1): os 7 ADRs em `docs/adr/`.
 - 🔄 T33 (parte 2): correções da auditoria de 05/11. Registro existente no HubSpot só recebe `ai_*`, regra K1 não grava no CRM, e-mail fora do domínio não associa, revisão humana em fail closed e NUL fora da auditoria. 1.050 testes.
 - 🔄 T33 (parte 3): guardrail ligado na API (`API_GUARDRAIL`, prompts `v6`, fail closed na subida), com ataques na montagem real da API (`tests/security/test_api_config.py`). Falta rebuild e teste real. `.agents/` e `skills-lock.json` no `.gitignore`.
-- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois o resto da T33 (ver "Cuidados para as fases finais"). Commits sem `Co-Authored-By`.
+- ⏭️ **Próximo passo:** o resto da T33 (ver "Cuidados para as fases finais"). Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
 
 ## Cuidados para as fases finais
 Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/auditoria-seguranca-2026-11-05/RELATORIO.md`, fora do repositório: não o copie para cá.
@@ -84,7 +84,7 @@ Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/au
 1. Antes de gastar cota, estime os tokens e some o uso das últimas 24 h em `agent_steps` por `model_key`. Se a cota acabar, pause: nada de plano pago, nem de outra chave para somar cota.
 2. Testes unitários e de grafo não chamam a Groq. Só avaliação, teste de integração real e demo gastam cota.
 3. Use `.venv/bin/...`, porque `uv run` e `make check` falham no ambiente do Claude. Rode cada etapa do `Makefile` pelas ferramentas do `.venv`.
-4. No commit, use `git add` com os nomes dos arquivos, sem `-A`: os arquivos da T30 estão fora do git até o `04-routing.md`. Não faça push sem o autor pedir.
+4. No commit, use `git add` com os nomes dos arquivos, sem `-A`. Não faça push sem o autor pedir.
 5. Não mostre valores do `.env` nem o ID da organização da Groq. O repositório é **público**.
 6. O material de entrevista e o relatório da auditoria nunca entram no repositório.
 7. Controle novo tem teste e mutação em uma cópia. Teste de ataque exercita também a configuração da API (`tests/security/test_api_config.py`).
@@ -95,14 +95,9 @@ Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/au
 3. Rode `tests/integration/test_hubspot_records_live.py`, que não usa a Groq. A busca de contato por e-mail da T33 só foi testada com mocks.
 4. Os leads do dataset usam `@example.com`, então não associam mais contato e empresa e a Note traz o aviso. Isso é esperado.
 
-**Passo 1: terminar a T30 (exige a Groq)**
-1. Confira o digest antes de rodar: `3bb59143…` (`app.integrity.verify()`). Se mudou, as rodadas misturam versões: pare e avise o autor.
-2. Faltam 12 leads da `routing` e 18 da `large_only` no test. Use `--confirm-test --resume --limit N`.
-3. Nunca rode `routing` e `large_only` em paralelo: elas dividem os 8K tokens/min do modelo maior.
-4. Não deixe o mini estourar na `routing`, porque a política troca para o modelo maior em silêncio. Confira o fallback nos passos.
-5. Registre o L039 refeito no dev e o timeout do L003 no test. Escreva o `04-routing.md` e commite os arquivos da T30.
+**Passo 1: T30 concluída em 05/11.** Ver `evals/reports/04-routing.md`.
 
-**Passo 2: terminar a T33 (só depois da T30)**
+**Passo 2: terminar a T33**
 1. Essas correções mudam o comportamento em avaliação: as 9 lacunas em `xfail`, `https` só em `tools_mcp/site.py:178,240` e o filtro de e-mail, telefone e host sem esquema em `app/security/output.py`.
 2. Prompt publicado é imutável. Prompt novo vira `v7`, com `scripts/lock_config.py`. Tire o `xfail` de cada lacuna corrigida.
 3. Guardrail ligado na API (parte 3). A combinação grafo do MVP + `v6` ainda não tem medição própria: não atribua a ela os números das outras configurações.
