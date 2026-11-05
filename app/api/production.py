@@ -8,6 +8,9 @@ Revisão humana (T31, `API_HUMAN_REVIEW`): o grafo roda com o checkpointer no Po
 incerto para no `human_review` e a execução fica `needs_review`; o checkpoint sobrevive a um
 restart da API e `POST /v1/runs/{id}/review` retoma o grafo de onde parou. Execução que
 termina sem parar tem o checkpoint apagado na hora (o state tem dados pessoais).
+
+Guardrail de entrada (T28, `API_GUARDRAIL`): ligado por padrão. A API não sobe se a versão de
+prompts não tiver o guardrail: rodar sem o filtro seria uma falha silenciosa.
 """
 
 import logging
@@ -33,6 +36,7 @@ from app.graph.checkpoint import forget, postgres_checkpointer, thread_config
 from app.graph.runtime import production_graph
 from app.graph.state import GraphInput
 from app.mcp_client import connect
+from app.prompts import load_prompt
 from app.schemas import LeadInput, ReviewDecision
 
 logger = logging.getLogger(__name__)
@@ -53,6 +57,7 @@ def graph_executor(
             settings,
             prompt_version=settings.api_prompt_version,
             write_crm=settings.api_write_crm,
+            guardrail=settings.api_guardrail,
             checkpointer=checkpointer,
         ) as (graph, _audit):
             config = thread_config(str(run_id))
@@ -71,6 +76,7 @@ def graph_resumer(settings: Settings, checkpointer: BaseCheckpointSaver[str]) ->
             settings,
             prompt_version=settings.api_prompt_version,
             write_crm=settings.api_write_crm,
+            guardrail=settings.api_guardrail,
             checkpointer=checkpointer,
         ) as (graph, _audit):
             config = thread_config(str(run_id))
@@ -91,6 +97,21 @@ async def _settle(
     config = thread_config(str(run_id))
     if not (await graph.aget_state(config)).interrupts:
         await forget(checkpointer, str(run_id))
+
+
+def check_guardrail(settings: Settings) -> None:
+    """Fail closed na subida: guardrail ligado exige prompts com ele; desligado fica no log."""
+    if not settings.api_guardrail:
+        logger.warning("guardrail de entrada desligado na API (API_GUARDRAIL=false)")
+        return
+    try:
+        load_prompt("guardrail", settings.api_prompt_version)
+        load_prompt("guardrail_user", settings.api_prompt_version)
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"API_GUARDRAIL exige prompts com o guardrail: {settings.api_prompt_version} não tem "
+            "(use v6)"
+        ) from None
 
 
 def health_checks(settings: Settings, engine: AsyncEngine) -> dict[str, HealthCheck]:
@@ -117,6 +138,7 @@ async def production_services(settings: Settings) -> AsyncIterator[Services]:
     if settings.groq_api_key is None or settings.tools_mcp_token is None:
         raise RuntimeError("GROQ_API_KEY e TOOLS_MCP_TOKEN são obrigatórias para a API")
     integrity.verify()
+    check_guardrail(settings)
     engine = create_engine(settings.database_url)
     try:
         store = AuditRepository(session_factory(engine))

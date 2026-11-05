@@ -933,3 +933,16 @@ Auditoria completa em 05/11 (`/security-review` no projeto inteiro): nenhuma vul
 - **Não testado:** o HubSpot real. A busca de contato por e-mail só rodou com mocks. Os containers `api` e `tools-mcp` precisam de rebuild.
 - **Risco residual** (em `06-seguranca-agentes.md`): lead forjado com domínio e e-mail coerentes ainda troca os `ai_*` de um registro existente. Fechar isso exige confirmar a posse do e-mail, antes de qualquer formulário público.
 - **Segurança:** ASI02 (allowlist menor em registro existente), ASI08 (fail closed) e dados de terceiros (cargo e nome não sobrescritos).
+
+## T33 (parte 3): guardrail ligado na API
+Decisão do autor depois da auditoria: a documentação apresentava o guardrail como ativo, mas só `scripts/qualify.py` e `evals/` o ligavam.
+- **API** (`app/api/production.py`, `app/config.py`): novo setting `API_GUARDRAIL` (padrão `true`), passado à execução e à retomada. `API_PROMPT_VERSION` passa de `v2` para `v6`, a primeira versão com o prompt do guardrail. O compose e o `.env.example` acompanham, porque o padrão do compose venceria o do código.
+- **Fail closed na subida:** guardrail ligado com uma versão de prompts sem ele impede a API de subir (`check_guardrail`). Antes de a checagem existir, cada execução falharia só na montagem do grafo. Desligar exige `API_GUARDRAIL=false` e fica no log.
+- **Efeito além do filtro:** a `v6` também traz as 3 regras do `normalize` da T27. A API passa a usar uma combinação ainda não medida: o grafo do MVP com os prompts `v6`. As configurações avaliadas são `mvp` (`v2`), `rag` (`v5`) e `routing` (`v6`, com pesquisa agêntica, próximo passo e política).
+- **Execuções pendentes:** as 5 execuções em `needs_review` do banco local (3 da `v2`, 2 da `v5`) não têm checkpoint nem `review_requested_at`, então nenhuma pode ser retomada e a troca não as afeta.
+- **Skill local:** `.agents/` e `skills-lock.json` no `.gitignore`. Com isso, o `detect-secrets` do gate deixa de varrê-los.
+- **Teste:** `tests/security/test_api_config.py` (12 testes) roda os ataques pelo executor e pelo `resumer` reais da API, com guardrail, revisão humana e CRM montados pelo `production_graph`: injeção e spam barrados pelo modelo, padrão conhecido sem chamar modelo, nenhum deles chega à pesquisa, à extração ou ao CRM; lead legítimo chega ao CRM; a retomada não repete a checagem. **Sem chamada à Groq.**
+- **Mutação (em uma cópia):** 12 de 12 pegas, inclusive os padrões do compose e do `.env.example`.
+- **Sem efeito na T30:** `evals/` monta o próprio grafo, e o digest de integridade (`3bb59143…`) não mudou.
+- **Não testado:** o guardrail na API real, que exige rebuild do container e cota da Groq. O mock não mede se o modelo cai no ataque.
+- **Segurança:** ASI01 (filtro de entrada no caminho real), ASI08 (fail closed na subida) e documentação coerente com o código.

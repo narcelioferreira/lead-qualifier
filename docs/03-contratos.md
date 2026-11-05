@@ -81,7 +81,8 @@ O MCP Inspector no navegador não conecta direto (o preflight CORS não leva a c
 | `MAX_MESSAGE_CHARS` | — | 100–20.000 (padrão 4.000) |
 | `TOOLS_MCP_URL`, `TOOLS_MCP_TOKEN` | — | Servidor MCP `lead-tools` (T20). Fora da máquina e do compose, só `https` |
 | `API_WRITE_CRM` | — | Grava no HubSpot (padrão `false`) |
-| `API_PROMPT_VERSION` | — | Versão dos prompts usada pela API (padrão `v2`) |
+| `API_PROMPT_VERSION` | — | Versão dos prompts usada pela API (padrão `v6`) |
+| `API_GUARDRAIL` | — | Guardrail de entrada (padrão `true`, T28). Exige prompts com o guardrail: com outra versão, a API não sobe |
 | `API_MAX_CONCURRENT_RUNS`, `API_MAX_PENDING_RUNS` | — | Fila: 1–4 em paralelo (padrão 1) e 1–100 aceitas e não terminadas (padrão 10) |
 | `API_MAX_BODY_BYTES` | — | 1 KB–1 MB (padrão 32 KB) |
 | `API_HUMAN_REVIEW` | — | Revisão humana com checkpointer no Postgres (padrão `true`, T31) |

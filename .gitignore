@@ -16,4 +16,7 @@ evals/annotations/planilha*.csv
 
 # Configuração pessoal do Claude Code
 .claude/settings.local.json
+# Skill local: fora do repositório
+.agents/
+skills-lock.json
 .vscode/

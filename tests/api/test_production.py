@@ -56,7 +56,9 @@ async def test_executor_roda_o_grafo_com_a_configuracao_da_api(
     execute = production.graph_executor(_settings(api_write_crm=True, api_prompt_version="v2"))
     await execute(run_id, LeadInput.model_validate(LEAD))
 
-    assert calls["kwargs"] == {"prompt_version": "v2", "write_crm": True, "checkpointer": None}
+    assert calls["kwargs"] == {
+        "prompt_version": "v2", "write_crm": True, "guardrail": True, "checkpointer": None,
+    }  # fmt: skip
     assert calls["config"] == {"configurable": {"thread_id": str(run_id)}}
     assert calls["state"]["run_id"] == str(run_id)
     assert calls["state"]["raw_input"]["company_name"] == LEAD["company_name"]

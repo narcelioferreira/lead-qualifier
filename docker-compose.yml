@@ -98,7 +98,8 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       # O sistema completo grava no HubSpot; `API_WRITE_CRM=false` no .env desliga.
       API_WRITE_CRM: ${API_WRITE_CRM:-true}
-      API_PROMPT_VERSION: ${API_PROMPT_VERSION:-v2}
+      API_PROMPT_VERSION: ${API_PROMPT_VERSION:-v6}
+      API_GUARDRAIL: ${API_GUARDRAIL:-true}
       API_HUMAN_REVIEW: ${API_HUMAN_REVIEW:-true}
       # MCP `lead-qualifier` em /mcp (T32): `Host` aceitos pela porta publicada no host.
       API_MCP_ALLOWED_HOSTS: ${API_MCP_ALLOWED_HOSTS:-127.0.0.1:*,localhost:*}

@@ -41,7 +41,10 @@ class Settings(BaseSettings):
 
     # API (T21). Gravar no HubSpot é opt-in: dev e testes nunca escrevem no CRM sem querer.
     api_write_crm: bool = False
-    api_prompt_version: str = Field(default="v2", pattern=r"^v[0-9]{1,3}$")
+    api_prompt_version: str = Field(default="v6", pattern=r"^v[0-9]{1,3}$")
+    # Guardrail de entrada (T28) na API. Exige prompts com o guardrail (`v6`): com outra versão, a
+    # API não sobe, em vez de rodar sem o filtro.
+    api_guardrail: bool = True
     # Plano gratuito da Groq (8K tokens/min, ~4,5K por lead): uma execução por vez, fila curta.
     api_max_concurrent_runs: int = Field(default=1, ge=1, le=4)
     api_max_pending_runs: int = Field(default=10, ge=1, le=100)
