@@ -82,6 +82,23 @@ def test_step_record_rejects_invalid_values() -> None:
         StepRecord(node="x", tier="A")  # type: ignore[call-arg]
 
 
+def test_step_record_removes_nul_from_untrusted_text() -> None:
+    """O Postgres recusa NUL em `jsonb`: a saída crua do LLM não pode derrubar a auditoria."""
+    step = StepRecord(
+        node="assess",
+        route_reason="a\x00b",
+        sources=["https://x.com.br/\x00"],
+        output={"rationale": "c\x00d", "nested": [{"k\x00": ("e\x00", 1, None)}]},
+    )
+    assert step.route_reason == "ab"
+    assert step.sources == ["https://x.com.br/"]
+    assert step.output == {"rationale": "cd", "nested": [{"k": ["e", 1, None]}]}
+
+
+def test_errors_lose_nul() -> None:
+    assert _clean_errors(["crm: a\x00b"]) == ["crm: ab"]
+
+
 def test_errors_are_truncated() -> None:
     errors = _clean_errors(["x" * 5000] * 50)
     assert len(errors) == MAX_ERRORS

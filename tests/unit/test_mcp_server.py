@@ -139,6 +139,7 @@ async def test_hubspot_upsert_company(respx_mock: respx.Router) -> None:
 
 @respx.mock(base_url=HUBSPOT_URL)
 async def test_hubspot_upsert_contact_associate_e_note(respx_mock: respx.Router) -> None:
+    respx_mock.post("/crm/v3/objects/contacts/search").respond(200, json={"results": []})
     respx_mock.post("/crm/v3/objects/contacts/batch/upsert").respond(
         200, json={"results": [{"id": "333", "new": False}]}
     )
@@ -233,7 +234,7 @@ async def test_argumento_desconhecido_e_recusado_sem_executar(
 
 @respx.mock(base_url=HUBSPOT_URL)
 async def test_erro_da_ferramenta_vira_mensagem_sem_token(respx_mock: respx.Router) -> None:
-    respx_mock.post("/crm/v3/objects/contacts/batch/upsert").respond(401, json={})
+    respx_mock.post("/crm/v3/objects/contacts/search").respond(401, json={})
     result = await _call("hubspot_upsert_contact", {"contact": {"email": "a@modelo.com.br"}})
     assert result.is_error and "HTTP 401" in _text(result)
     assert FAKE_TOKEN not in _text(result)

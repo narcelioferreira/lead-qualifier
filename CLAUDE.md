@@ -73,7 +73,61 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - ✅ T32: MCP `lead-qualifier` em `/mcp` na API (`app/api/mcp_server.py`: `qualify_lead` espera até 25 s, `get_run`; mesma `API_KEY`, fila e auditoria da REST; sem tool de revisão, de propósito), `scripts/mcp_qualifier_demo.py`. Corrigida uma corrida da T31 no `RunQueue` (decisão reservada antes do fim do job que parou). 905 testes.
 - 🔄 T33 em andamento (parte 1): `tests/security/` com mocks, 140 testes (131 verdes + 9 `xfail` estritos com lacunas registradas em `06-seguranca-agentes.md`). Corrigir as lacunas só depois da T30, porque muda o comportamento em avaliação.
 - 🔄 T35 em andamento (parte 1): os 7 ADRs em `docs/adr/`.
-- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois o resto da T33. Commits sem `Co-Authored-By`.
+- 🔄 T33 (parte 2): correções da auditoria de 05/11. Registro existente no HubSpot só recebe `ai_*`, regra K1 não grava no CRM, e-mail fora do domínio não associa, revisão humana em fail closed e NUL fora da auditoria. 1.050 testes.
+- ⏭️ **Próximo passo:** terminar a T30 quando a cota liberar; depois o resto da T33 (ver "Cuidados para as fases finais"). Commits sem `Co-Authored-By`.
+
+## Cuidados para as fases finais
+Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/auditoria-seguranca-2026-11-05/RELATORIO.md`, fora do repositório: não o copie para cá.
+
+**Em toda sessão**
+1. Antes de gastar cota, estime os tokens e some o uso das últimas 24 h em `agent_steps` por `model_key`. Se a cota acabar, pause: nada de plano pago, nem de outra chave para somar cota.
+2. Testes unitários e de grafo não chamam a Groq. Só avaliação, teste de integração real e demo gastam cota.
+3. Use `.venv/bin/...`, porque `uv run` e `make check` falham no ambiente do Claude. Rode cada etapa do `Makefile` pelas ferramentas do `.venv`.
+4. No commit, use `git add` com os nomes dos arquivos, sem `-A`: `.agents/`, `skills-lock.json` e os arquivos da T30 estão fora do git. Não faça push sem o autor pedir.
+5. Não mostre valores do `.env` nem o ID da organização da Groq. O repositório é **público**.
+6. O material de entrevista e o relatório da auditoria nunca entram no repositório.
+7. Controle novo tem teste e mutação em uma cópia. Teste de ataque exercita também a configuração da API, que hoje é diferente da usada em `tests/security/`.
+
+**Antes de gravar no HubSpot real**
+1. Reconstrua os containers: `docker compose up -d --build api tools-mcp`. Confira o schema do container.
+2. Confirme com o autor: `API_WRITE_CRM` é `true` por padrão no compose, e `scripts/smoke_e2e.sh`, `scripts/review_restart_check.sh` e `scripts/mcp_qualifier_demo.py` gravam de verdade.
+3. Rode `tests/integration/test_hubspot_records_live.py`, que não usa a Groq. A busca de contato por e-mail da T33 só foi testada com mocks.
+4. Os leads do dataset usam `@example.com`, então não associam mais contato e empresa e a Note traz o aviso. Isso é esperado.
+
+**Passo 1: terminar a T30 (exige a Groq)**
+1. Confira o digest antes de rodar: `3bb59143…` (`app.integrity.verify()`). Se mudou, as rodadas misturam versões: pare e avise o autor.
+2. Faltam 12 leads da `routing` e 18 da `large_only` no test. Use `--confirm-test --resume --limit N`.
+3. Nunca rode `routing` e `large_only` em paralelo: elas dividem os 8K tokens/min do modelo maior.
+4. Não deixe o mini estourar na `routing`, porque a política troca para o modelo maior em silêncio. Confira o fallback nos passos.
+5. Registre o L039 refeito no dev e o timeout do L003 no test. Escreva o `04-routing.md` e commite os arquivos da T30.
+
+**Passo 2: terminar a T33 (só depois da T30)**
+1. Essas correções mudam o comportamento em avaliação: as 9 lacunas em `xfail`, `https` só em `tools_mcp/site.py:178,240` e o filtro de e-mail, telefone e host sem esquema em `app/security/output.py`.
+2. Prompt publicado é imutável. Prompt novo vira `v7`, com `scripts/lock_config.py`. Tire o `xfail` de cada lacuna corrigida.
+3. Decisão do autor, ainda em aberto: ligar o guardrail na API (`v6` mais um setting, nos dois pontos de `app/api/production.py`, recomendado) ou corrigir os documentos. Hoje `docs/00-arquitetura.md:53,83,200` e `docs/06-seguranca-agentes.md:30,77` o apresentam como ativo, e a API não o usa. Execução em `needs_review` feita com `v2` precisa ser conferida antes da troca.
+4. Filtro do próximo passo é pré-requisito antes de `next_step=True` na API.
+5. Falta do plano: ataques reais ao mini (G011, G014, gastam cota), timeout global por lead e revisão de segredos e permissões. Rode `/security-review` de novo no fim.
+
+**Passo 3: T34 (exige a Groq; uma única rodada)**
+1. Congele a configuração antes. Se o passo 2 mudou o comportamento, ela é uma configuração nova, com rodada própria no test.
+2. Ajuste de prompt só no dev. Depois de ver o test, nada de ajustar e rodar de novo.
+3. Divergências viram análise de erro no `05-final.md`. A reprodução usa o cache, sem chamadas novas: confira antes de rodar.
+4. Nunca gere nem altere `evals/labels.jsonl`.
+
+**Passo 4: T35 (sem a Groq)**
+1. Corrija o que a auditoria achou de impreciso: `README.md:231` e `tools_mcp/site.py:5-6` e a linha de DNS rebinding em `docs/06-seguranca-agentes.md`, que citam a T19.
+2. Recorte `docs/linkedin/t22-smoke.png` (record IDs e `usuário@hostname`) e `t22-docs-run.png` (favoritos e `run_id`). Confira a GIF, que não foi auditada por inteiro.
+3. Crie `evals/README.md` avisando que as empresas são reais e as mensagens, inventadas. A L012 é o caso mais sensível; trocá-la muda o dataset, então a decisão é do autor.
+4. Antes de versionar `.agents/`, confira a licença da skill. Se não for usar, deixe fora.
+5. Teste o README em um clone limpo. O README menciona o Claude Code só como assistência.
+6. O `CLAUDE.md` será apagado aqui: confira antes se algo dele ainda precisa ir para a documentação.
+
+**Passo 5: T36 (sem a Groq)**
+1. Todo número vem de `evals/reports/`.
+2. Só afirme o que o código faz: confira cada controle citado (guardrail principalmente).
+3. Sem coautoria nem destaque ao Claude. Os posts são rascunhos: o autor revisa e publica.
+
+**Bloqueio permanente:** não ligue um formulário público à API sem antes confirmar a posse do e-mail e impedir que um lead sobrescreva a avaliação de um registro existente sem revisão.
 
 ## Comandos
 ```bash

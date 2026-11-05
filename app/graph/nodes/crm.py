@@ -4,6 +4,13 @@ Ordem: empresa (pelo domínio) → contato (pelo e-mail) → associação → No
 por critério. **Idempotente por `run_id`:** os upserts usam chaves únicas do HubSpot e a Note é
 registrada pelo `run_id` no servidor, então repetir o nó (retry, retomada) não duplica nada.
 
+O domínio e o e-mail do lead são autodeclarados, então o nó não confia neles para ligar ou
+alterar registros:
+- regra K1 (spam ou manipulação) não grava nada: uma injeção não rebaixa um cliente real no CRM,
+  e a tentativa fica na auditoria;
+- e-mail fora do domínio da empresa não associa contato e empresa, e a Note avisa. Isso vale
+  também para e-mail gratuito, porque o código não tem como provar a ligação.
+
 Falha no CRM não derruba a execução (ASI08): o resultado continua válido, o erro vai para a
 auditoria e as etapas seguintes que dependem do id que faltou são puladas. O e-mail do lead é
 mascarado nos erros gravados (LGPD).
@@ -23,6 +30,9 @@ from app.ontology.models import Criterion
 from app.schemas import NextStep, QualificationResult
 from tools_mcp.base import ToolError
 from tools_mcp.hubspot import AiFields, CompanyProps, ContactProps, UpsertResult
+
+# Rubrica: spam ou manipulação (flags `spam` e `injection`).
+MANIPULATION_RULE = "K1"
 
 CRITERION_LABELS = {
     Criterion.SECTOR.value: "Setor",
@@ -55,9 +65,27 @@ class CrmWriter(Protocol):
     ) -> NoteRef: ...
 
 
-def should_write(state: QualificationState) -> bool:
-    """Só execuções com score vão ao CRM: rejeitado ou falho não tem tier para gravar."""
-    return state.get("status") not in {"rejected", "failed"} and "score" in state
+def write_block_reason(state: QualificationState) -> str | None:
+    """Por que a execução não vai ao CRM, ou `None` se ela pode gravar."""
+    if state.get("status") in {"rejected", "failed"} or "score" not in state:
+        return "sem score: não grava"  # rejeitado ou falho não tem tier para gravar
+    if MANIPULATION_RULE in state["score"].disqualifiers:
+        return f"regra {MANIPULATION_RULE}: fica só na auditoria"
+    return None
+
+
+def identity_matches(email: str, domain: str) -> bool:
+    """O e-mail é do domínio da empresa ou de um subdomínio dele (`a@ti.modelo.com.br`)."""
+    email_domain = email.rpartition("@")[2].lower()
+    company_domain = domain.lower()
+    return email_domain == company_domain or email_domain.endswith(f".{company_domain}")
+
+
+def _identity_mismatch(state: QualificationState) -> bool:
+    lead = state.get("lead")
+    if lead is None or not lead.contact_email or not lead.company_domain:
+        return False
+    return not identity_matches(lead.contact_email, lead.company_domain)
 
 
 def next_step_text(step: NextStep) -> str:
@@ -77,6 +105,11 @@ def note_text(state: QualificationState, result: QualificationResult) -> str:
         header.append(f"Regras eliminatórias: {', '.join(result.disqualifiers)}. {reason}".strip())
     if result.caps_applied:
         header.append(f"Tetos aplicados: {', '.join(result.caps_applied)}")
+    if _identity_mismatch(state):
+        header.append(
+            "Identidade não verificada: o e-mail não é do domínio da empresa, "
+            "então contato e empresa não foram associados."
+        )
     review = result.review
     if review is not None:
         change = (
@@ -124,8 +157,9 @@ def _ai_fields(result: QualificationResult, qualified_at: datetime) -> dict[str,
 
 def make_write_to_crm(crm: CrmWriter) -> Node:
     async def write_to_crm(state: QualificationState) -> dict[str, Any]:
-        if not should_write(state):
-            return {"steps": [StepRecord(node="write_to_crm", route_reason="sem score: não grava")]}
+        block_reason = write_block_reason(state)
+        if block_reason is not None:
+            return {"steps": [StepRecord(node="write_to_crm", route_reason=block_reason)]}
         lead = state["lead"]
         result = build_result(state)
         ids: dict[str, str] = {}
@@ -159,7 +193,8 @@ def make_write_to_crm(crm: CrmWriter) -> Node:
                 ids["contact_id"] = (await crm.upsert_contact(contact)).id
             except (ToolError, ValidationError) as exc:
                 failed("contato", exc)
-        if {"company_id", "contact_id"} <= ids.keys():
+        mismatch = _identity_mismatch(state)
+        if {"company_id", "contact_id"} <= ids.keys() and not mismatch:
             try:
                 await crm.associate(ids["contact_id"], ids["company_id"])
             except ToolError as exc:
@@ -184,7 +219,12 @@ def make_write_to_crm(crm: CrmWriter) -> Node:
             "steps": [
                 StepRecord(
                     node="write_to_crm",
-                    output={**ids, "note_created": note_created, "errors": len(errors)},
+                    output={
+                        **ids,
+                        "note_created": note_created,
+                        "identity_mismatch": mismatch,
+                        "errors": len(errors),
+                    },
                 )
             ],
         }

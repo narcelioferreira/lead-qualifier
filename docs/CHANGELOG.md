@@ -916,3 +916,20 @@
 - **Problema corrigido no próprio teste:** a checagem de vazamento comparava o texto cru com o JSON do resultado. Um texto com quebra de linha nunca casava, e o teste passava sem conferir nada. Apareceu porque o `xfail` estrito acusou o XPASS. Agora compara com o mesmo escape do JSON.
 - **Segurança:** só testes e documentação; nenhuma linha de `app/` ou `tools_mcp/` mudou, para não afetar as rodadas da T30.
 - **Falta na T33:** corrigir as lacunas, ataques reais ao mini (G011, G014), timeout global por lead, revisão de segredos e permissões e `/security-review`.
+
+## T33 (parte 2): correções da auditoria de segurança
+Auditoria completa em 05/11 (`/security-review` no projeto inteiro): nenhuma vulnerabilidade HIGH nem segredo vazado. O relatório fica fora do repositório. Esta parte corrige os dois pontos que não mexem nas avaliações.
+- **Lead forjado sobrescrevendo o CRM** (`tools_mcp/hubspot.py`, `app/graph/nodes/crm.py`):
+  - registro existente só recebe `ai_*`. Nome, domínio, e-mail e cargo só entram na criação;
+  - o contato agora é buscado por e-mail antes do upsert, como a empresa já era por domínio;
+  - regra K1 (spam ou manipulação) não grava nada: uma injeção não rebaixa um cliente real, e a tentativa fica na auditoria;
+  - e-mail fora do domínio da empresa, ou de um subdomínio dele, não associa contato e empresa, e a Note avisa. **Decisão:** vale também para e-mail gratuito e para os leads do dataset (`lead-NNN@example.com`), porque o código não tem como provar o vínculo.
+- **Revisão humana em fail closed** (`app/graph/nodes/review.py`, `core.py`, `builder.py`): se o pedido de revisão não for gravado, a execução termina `failed` e vai direto ao `audit_log`, sem passar pelo CRM. Antes, ela seguia sem revisão.
+- **NUL na auditoria** (`app/audit/repository.py`): `StepRecord` e os erros perdem o `\u0000`, que o Postgres recusa em `jsonb`. A saída crua do LLM não derruba mais a gravação.
+- **Problema corrigido na própria correção:** `hubspot_properties()` das subclasses também devolve `name`, `domain`, `email` e `jobtitle`, então a primeira versão continuava sobrescrevendo. O teste novo pegou, e agora o `PATCH` usa `ai_properties()`.
+- **Teste:** 1.050 testes unitários e de grafo, 9 `xfail` já registrados, cobertura de 94%. Integração real com o Postgres em banco descartável (`test_audit_repo.py`, 15 testes, com NUL em `jsonb`). ruff, mypy strict, bandit, detect-secrets e pip-audit verdes. **Sem chamada à Groq.**
+- **Mutação (em uma cópia):** 16 de 16 pegas. A 16ª (NUL nos erros) escapou na primeira rodada e ganhou um teste.
+- **Sem efeito na T30:** o digest de integridade (`3bb59143…`) não mudou, e as avaliações rodam sem CRM e sem checkpointer.
+- **Não testado:** o HubSpot real. A busca de contato por e-mail só rodou com mocks. Os containers `api` e `tools-mcp` precisam de rebuild.
+- **Risco residual** (em `06-seguranca-agentes.md`): lead forjado com domínio e e-mail coerentes ainda troca os `ai_*` de um registro existente. Fechar isso exige confirmar a posse do e-mail, antes de qualquer formulário público.
+- **Segurança:** ASI02 (allowlist menor em registro existente), ASI08 (fail closed) e dados de terceiros (cargo e nome não sobrescritos).

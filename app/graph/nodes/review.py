@@ -3,8 +3,8 @@
     compute_score ─(regra de incerteza)─► request_review ─► human_review ─► próximo passo/CRM
 
 - `request_review` grava na auditoria os passos até aqui e o resultado provisório, com status
-  `needs_review` (a fila de `GET /v1/runs?status=needs_review`). Se a gravação falhar, o lead
-  segue sem revisão, como antes da T31: ninguém acharia a execução para retomá-la;
+  `needs_review` (a fila de `GET /v1/runs?status=needs_review`). Se a gravação falhar, a execução
+  termina `failed` e não vai ao CRM: sem o pedido, ninguém a acharia para revisar (fail closed);
 - `human_review` chama o `interrupt()`: o state fica no checkpointer (Postgres em produção) e o
   processo pode reiniciar. `POST /v1/runs/{id}/review` retoma com `Command(resume=decisão)`.
 
@@ -71,6 +71,7 @@ def make_request_review(audit: ReviewAudit | None) -> "Node":
         except Exception as exc:
             return update | {
                 "review_pending": False,
+                "status": "failed",
                 "errors": [f"request_review: pedido não gravado ({type(exc).__name__})"],
             }
         return update | {"review_pending": True, "audited_steps": len(steps)}

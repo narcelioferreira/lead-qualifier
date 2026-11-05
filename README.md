@@ -73,7 +73,7 @@ flowchart LR
 | `normalize_to_ontology` | LLM (`gpt-oss-20b`) | Extrai fatos e classificações da ontologia, com certeza e ids das evidências. O **código** mapeia: setor pelo CNAE (só se o CNAE aparecer nas evidências), região pela UF/país e porte por funcionários ou frota × 2,5 |
 | `assess_criteria` | LLM | Escreve a justificativa citando as evidências (`E1`, `E2`...). Não altera valores nem pontua |
 | `compute_score` | código | Rubrica de 5 critérios (soma 100), regras eliminatórias K1–K7, tetos C1–C4 e marcação de fronteira e de revisão humana |
-| `write_to_crm` | ferramentas (MCP) | Grava empresa (pelo domínio), contato (pelo e-mail), associação e a Note com a justificativa por critério no HubSpot. Idempotente por `run_id`; falha no CRM vira erro na auditoria, sem perder o resultado |
+| `write_to_crm` | ferramentas (MCP) | Grava empresa (pelo domínio), contato (pelo e-mail), associação e a Note com a justificativa por critério no HubSpot. Idempotente por `run_id`; falha no CRM vira erro na auditoria, sem perder o resultado. Registro existente só recebe `ai_*`, a regra K1 não grava nada e e-mail fora do domínio da empresa não associa (a Note avisa) |
 | `audit_log` | código | Grava a execução completa (entrada, passos, tokens, custo, latência e resultado) em `agent_runs` e `agent_steps` |
 
 O diagrama gerado do próprio código está em [`docs/grafo.mmd`](docs/grafo.mmd), e um teste falha se ele ficar desatualizado.

@@ -80,6 +80,7 @@ async def test_crm_pelo_mcp(respx_mock: respx.Router, tools: LeadTools) -> None:
     upsert = respx_mock.post("/crm/v3/objects/companies/batch/upsert").respond(
         200, json={"results": [{"id": "111", "new": True}]}
     )
+    respx_mock.post("/crm/v3/objects/contacts/search").respond(200, json={"results": []})
     respx_mock.post("/crm/v3/objects/contacts/batch/upsert").respond(
         200, json={"results": [{"id": "333", "new": False}]}
     )

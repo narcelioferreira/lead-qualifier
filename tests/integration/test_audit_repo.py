@@ -106,6 +106,13 @@ async def test_full_run_is_written_and_read_back(repo: AuditRepository) -> None:
     assert run.steps[1].sources == ["https://gobor.com.br"]
 
 
+async def test_nul_in_llm_output_does_not_break_the_audit(repo: AuditRepository) -> None:
+    run_id = await repo.start_run(LEAD, "v1")
+    await repo.add_step(run_id, StepRecord(node="assess", output={"rationale": "a\x00b"}))
+    view = await repo.get_run(run_id)
+    assert view is not None and view.steps[0].output == {"rationale": "ab"}
+
+
 async def test_needs_review_status(repo: AuditRepository) -> None:
     run_id = await repo.start_run(LEAD, "v1")
     await repo.complete_run(run_id, _result(run_id, needs_review=True), latency_ms=10)

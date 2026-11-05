@@ -30,6 +30,7 @@ RUN_ID = "0b6f1a52-3c1e-4f0e-9a51-2f8d6f0c9e11"
 SEARCH = "/crm/v3/objects/companies/search"
 COMPANY_UPSERT = "/crm/v3/objects/companies/batch/upsert"
 CONTACT_UPSERT = "/crm/v3/objects/contacts/batch/upsert"
+CONTACT_SEARCH = "/crm/v3/objects/contacts/search"
 
 
 @pytest.fixture
@@ -157,9 +158,16 @@ async def test_empresa_existente_e_atualizada_sem_duplicar(respx_mock: respx.Rou
 
     assert (result.id, result.created) == ("222", False)
     assert not upsert.called
-    # a chave única não é gravada no PATCH: a empresa pode ter sido criada à mão
-    assert "ai_company_domain" not in _json(patch)["properties"]
-    assert _json(patch)["properties"]["ai_fit_score"] == "70.0"
+    # só `ai_*`: nome e domínio vêm do lead, e a empresa pode ter sido criada à mão
+    assert _json(patch)["properties"] == {"ai_fit_score": "70.0"}
+
+
+@respx.mock(base_url=HUBSPOT_URL, assert_all_called=False)
+async def test_empresa_existente_sem_ai_nao_recebe_patch(respx_mock: respx.Router) -> None:
+    respx_mock.post(SEARCH).respond(200, json={"results": [{"id": "222"}]})
+    patch = respx_mock.patch("/crm/v3/objects/companies/222")
+    result = await _client().upsert_company(_company())
+    assert result.id == "222" and not patch.called
 
 
 @respx.mock(base_url=HUBSPOT_URL)
@@ -190,7 +198,8 @@ async def test_id_nao_numerico_na_resposta_e_rejeitado(respx_mock: respx.Router)
 
 
 @respx.mock(base_url=HUBSPOT_URL)
-async def test_contato_upsert_por_email(respx_mock: respx.Router) -> None:
+async def test_contato_novo_usa_upsert_com_o_cargo(respx_mock: respx.Router) -> None:
+    search = respx_mock.post(CONTACT_SEARCH).respond(200, json={"results": []})
     upsert = respx_mock.post(CONTACT_UPSERT).respond(
         200, json={"results": [{"id": "333", "new": True}]}
     )
@@ -202,6 +211,26 @@ async def test_contato_upsert_por_email(respx_mock: respx.Router) -> None:
     assert sent["idProperty"] == "email"
     assert sent["properties"]["jobtitle"] == "Gerente de frota"
     assert sent["properties"]["ai_fit_tier"] == "A"
+    assert _json(search)["filterGroups"][0]["filters"][0] == {
+        "propertyName": "email",
+        "operator": "EQ",
+        "value": "compras@modelo.com.br",
+    }
+
+
+@respx.mock(base_url=HUBSPOT_URL, assert_all_called=False)
+async def test_contato_existente_nao_tem_o_cargo_sobrescrito(respx_mock: respx.Router) -> None:
+    respx_mock.post(CONTACT_SEARCH).respond(200, json={"results": [{"id": "333"}]})
+    patch = respx_mock.patch("/crm/v3/objects/contacts/333").respond(200, json={"id": "333"})
+    upsert = respx_mock.post(CONTACT_UPSERT)
+
+    result = await _client().upsert_contact(
+        ContactProps(email="ceo@modelo.com.br", jobtitle="Estagiário", ai_fit_tier="D")
+    )
+
+    assert (result.id, result.created) == ("333", False)
+    assert not upsert.called
+    assert _json(patch)["properties"] == {"ai_fit_tier": "D"}
 
 
 @respx.mock(base_url=HUBSPOT_URL)
@@ -266,6 +295,7 @@ async def test_429_seguido_de_sucesso() -> None:
         ]
     )
     with respx.mock(base_url=HUBSPOT_URL) as router:
+        router.post(CONTACT_SEARCH).respond(200, json={"results": []})
         route = router.post(CONTACT_UPSERT).mock(side_effect=lambda _: next(responses))
         result = await _client().upsert_contact(ContactProps(email="a@modelo.com.br"))
     assert result.id == "333" and route.call_count == 2
@@ -273,7 +303,7 @@ async def test_429_seguido_de_sucesso() -> None:
 
 @respx.mock(base_url=HUBSPOT_URL)
 async def test_401_sem_token_na_mensagem(respx_mock: respx.Router) -> None:
-    respx_mock.post(CONTACT_UPSERT).respond(
+    respx_mock.post(CONTACT_SEARCH).respond(
         401, json={"category": "INVALID_AUTHENTICATION", "message": "token inválido"}
     )
     with pytest.raises(ToolRequestError, match="HTTP 401") as info:

@@ -178,15 +178,18 @@ async def test_confident_lead_does_not_stop() -> None:
     assert h.audit.requests == []
 
 
-async def test_if_the_request_is_not_recorded_the_lead_goes_on_without_review() -> None:
-    """Ninguém acharia a execução para retomá-la: segue como antes da T31 (needs_review)."""
+async def test_if_the_request_is_not_recorded_the_run_fails_and_skips_the_crm() -> None:
+    """Fail closed: ninguém acharia a execução para revisar, então ela não vai ao CRM."""
     h = Harness(UNSURE, audit=ReviewAudit(fail_request=True))
     out = await h.start()
     assert "__interrupt__" not in out
-    assert out["status"] == "needs_review"
+    assert out["status"] == "failed"
     assert "request_review: pedido não gravado (ConnectionError)" in out["errors"]
     [record] = h.audit.records
-    assert record["steps"][0].node == "validate_input"  # grava todos os passos
+    assert record["status"] == "failed" and record["result"] is None
+    nodes = [step.node for step in record["steps"]]
+    assert nodes[0] == "validate_input"  # grava todos os passos
+    assert "request_review" in nodes and "write_to_crm" not in nodes
 
 
 async def test_invalid_decision_fails_inside_the_graph_too() -> None:
@@ -282,7 +285,8 @@ def test_graph_without_review_is_unchanged_and_diagram_is_up_to_date() -> None:
     )
     assert "compute_score -. &nbsp;review&nbsp; .-> request_review" in diagram
     assert "request_review -. &nbsp;wait&nbsp; .-> human_review" in diagram
-    assert "request_review -. &nbsp;skip&nbsp; .-> suggest_next_step" in diagram
+    assert "request_review -. &nbsp;fail&nbsp; .-> audit_log" in diagram
+    assert "request_review -. &nbsp;skip" not in diagram
     assert MERMAID_REVIEW_PATH.read_text(encoding="utf-8") == diagram, (
         "rode `uv run python scripts/export_graph.py`"
     )

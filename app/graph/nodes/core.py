@@ -64,8 +64,8 @@ def route_review(state: QualificationState) -> str:
 
 
 def route_review_pending(state: QualificationState) -> str:
-    """Sem o pedido gravado na auditoria ninguém retomaria o grafo: segue sem revisão."""
-    return "wait" if state.get("review_pending") else "skip"
+    """Sem o pedido gravado na auditoria ninguém retomaria o grafo: encerra como falha."""
+    return "wait" if state.get("review_pending") else "fail"
 
 
 def route_research(state: QualificationState) -> str:

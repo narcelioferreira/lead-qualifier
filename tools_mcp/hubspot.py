@@ -3,12 +3,15 @@
 Na T19 estes métodos viram as tools MCP `hubspot_*` do servidor `lead-tools`.
 
 Idempotência: rodar o mesmo lead duas vezes não duplica registros.
-- Contato: upsert atômico por `email` (único no HubSpot).
+- Contato: primeiro busca por `email`; sem resultado, faz upsert atômico por `email` (único).
 - Empresa: primeiro busca por `domain` (acha empresas criadas à mão); sem resultado, faz upsert
   atômico por `ai_company_domain` (único, criado na T17). A busca do HubSpot leva alguns
   segundos para indexar registros novos; o upsert pela chave única fecha essa janela.
 - Associação: `PUT` da associação padrão, idempotente por natureza.
 - Note: cada qualificação gera uma Note; a idempotência por `run_id` fica no `write_to_crm` (T20).
+
+**Registro existente só recebe `ai_*`:** nome e cargo vêm do lead, que é não confiável, e quem
+informa um domínio ou e-mail não prova que é dono dele. Eles só entram na criação do registro.
 
 Controles (OWASP ASI02): só propriedades da allowlist, com tipos e limites validados (o agente
 não escreve `hubspot_owner_id`, `lifecyclestage` etc.); IDs só numéricos; nunca apaga; o corpo
@@ -74,6 +77,10 @@ class AiFields(BaseModel):
                 props[name] = str(value)
         return props
 
+    def ai_properties(self) -> dict[str, str]:
+        """Só as `ai_*`: o que um registro já existente pode receber."""
+        return {k: v for k, v in self.hubspot_properties().items() if k.startswith("ai_")}
+
 
 class CompanyProps(AiFields):
     name: Annotated[CleanStr, StringConstraints(min_length=2, max_length=200)]
@@ -119,51 +126,27 @@ class HubSpotClient:
         return "HubSpotClient()"
 
     async def upsert_company(self, props: CompanyProps) -> UpsertResult:
-        properties = {"name": props.name, "domain": props.domain} | props.hubspot_properties()
         async with self._http.client() as client:
-            found = await self._http.send(
-                client,
-                "POST",
-                "/crm/v3/objects/companies/search",
-                {
-                    "filterGroups": [
-                        {
-                            "filters": [
-                                {"propertyName": "domain", "operator": "EQ", "value": props.domain}
-                            ]
-                        }
-                    ],
-                    "sorts": [{"propertyName": "createdate", "direction": "ASCENDING"}],
-                    "properties": ["domain"],
-                    "limit": 1,
-                },
-            )
-            results = found.get("results") or []
-            if results:
-                company_id = _hubspot_id(results[0])
-                await self._http.send(
-                    client,
-                    "PATCH",
-                    f"/crm/v3/objects/companies/{company_id}",
-                    {"properties": properties},
-                )
-                return UpsertResult(id=company_id, created=False)
+            company_id = await self._find(client, "companies", "domain", props.domain)
+            if company_id is not None:
+                return await self._update_ai(client, "companies", company_id, props)
             return await self._batch_upsert(
                 client,
                 "companies",
                 "ai_company_domain",
                 props.domain,
-                properties | {"ai_company_domain": props.domain},
+                props.hubspot_properties() | {"ai_company_domain": props.domain},
             )
 
     async def upsert_contact(self, props: ContactProps) -> UpsertResult:
-        properties = {"email": str(props.email)} | props.hubspot_properties()
-        if props.jobtitle:
-            properties["jobtitle"] = props.jobtitle
+        # Minúsculas, como o HubSpot guarda: uma busca que falhasse pela caixa trocaria o cargo.
+        email = str(props.email).lower()
         async with self._http.client() as client:
-            return await self._batch_upsert(
-                client, "contacts", "email", str(props.email), properties
-            )
+            contact_id = await self._find(client, "contacts", "email", email)
+            if contact_id is not None:
+                return await self._update_ai(client, "contacts", contact_id, props)
+            properties = props.hubspot_properties() | {"email": email}
+            return await self._batch_upsert(client, "contacts", "email", email, properties)
 
     async def associate(self, contact_id: str, company_id: str) -> None:
         contact, company = _valid_id(contact_id), _valid_id(company_id)
@@ -209,6 +192,43 @@ class HubSpotClient:
         async with self._http.client() as client:
             created = await self._http.send(client, "POST", "/crm/v3/objects/notes", payload)
         return _hubspot_id(created)
+
+    async def _find(
+        self, client: httpx.AsyncClient, object_type: str, prop: str, value: str
+    ) -> str | None:
+        """Id do registro mais antigo com `prop == value`, ou `None`."""
+        found = await self._http.send(
+            client,
+            "POST",
+            f"/crm/v3/objects/{object_type}/search",
+            {
+                "filterGroups": [
+                    {"filters": [{"propertyName": prop, "operator": "EQ", "value": value}]}
+                ],
+                "sorts": [{"propertyName": "createdate", "direction": "ASCENDING"}],
+                "properties": [prop],
+                "limit": 1,
+            },
+        )
+        results = found.get("results") or []
+        return _hubspot_id(results[0]) if results else None
+
+    async def _update_ai(
+        self,
+        client: httpx.AsyncClient,
+        object_type: str,
+        object_id: str,
+        props: AiFields,
+    ) -> UpsertResult:
+        ai_properties = props.ai_properties()
+        if ai_properties:
+            await self._http.send(
+                client,
+                "PATCH",
+                f"/crm/v3/objects/{object_type}/{object_id}",
+                {"properties": ai_properties},
+            )
+        return UpsertResult(id=object_id, created=False)
 
     async def _batch_upsert(
         self,

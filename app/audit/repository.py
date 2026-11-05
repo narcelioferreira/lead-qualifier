@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -34,6 +34,21 @@ class AuditError(Exception):
     """Operação de auditoria inválida (execução inexistente ou já encerrada)."""
 
 
+def _strip_nul(value: Any) -> Any:
+    """Tira o NUL de strings aninhadas: o Postgres o recusa em `text` e em `jsonb`.
+
+    A saída crua do LLM é não confiável e entra na auditoria. Sem isso, um `\\u0000` faria a
+    gravação falhar.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {_strip_nul(key): _strip_nul(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_strip_nul(item) for item in value]
+    return value
+
+
 class StepRecord(BaseModel):
     """Um passo do grafo, pronto para gravar."""
 
@@ -48,6 +63,11 @@ class StepRecord(BaseModel):
     latency_ms: int | None = Field(default=None, ge=0)
     output: dict[str, Any] | None = None
     sources: list[str] = Field(default_factory=list)
+
+    @field_validator("output", "route_reason", "sources", mode="before")
+    @classmethod
+    def _no_nul(cls, value: Any) -> Any:
+        return _strip_nul(value)
 
     @classmethod
     def from_llm(
@@ -129,7 +149,7 @@ def audit_lead_input(lead: LeadInput) -> dict[str, Any]:
 
 def _clean_errors(errors: Sequence[str]) -> list[str]:
     # Erros podem citar texto não confiável: limita quantidade e tamanho.
-    return [str(e)[:MAX_ERROR_CHARS] for e in errors[:MAX_ERRORS]]
+    return [_strip_nul(str(e))[:MAX_ERROR_CHARS] for e in errors[:MAX_ERRORS]]
 
 
 class AuditRepository:

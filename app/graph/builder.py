@@ -126,7 +126,7 @@ def build_graph(
         graph.add_conditional_edges(
             "request_review",
             core.route_review_pending,
-            {"wait": "human_review", "skip": after_score},
+            {"wait": "human_review", "fail": "audit_log"},
         )
         graph.add_edge("human_review", after_score)
     else:
