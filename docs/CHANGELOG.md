@@ -984,3 +984,12 @@ Corrige as 9 lacunas em `xfail` e os filtros que esperavam o fim da T30. Nenhum 
 - **Problema corrigido: `evals/reports/guardrail-bench.md` tinha dados de teste** (modelo `m`, 15/68) desde a T28, porque um teste antigo gravava no caminho real; o `59d3466` já tinha corrigido a causa, mas não o arquivo. O relatório foi regenerado das rodadas guardadas, sem cota, e bate com a ADR 0006 (mini 22/24 e 0/32; só as regras 2/33). As colunas de regra refletem as regras da T28: G011 e G014 só viraram regra na T33. Novo teste compara o relatório versionado com as rodadas (`test_versioned_report_matches_the_saved_runs`); mutação em uma cópia: pega.
 - **`.env.example`:** o comentário do `HUBSPOT_TOKEN` passa a listar também os escopos `crm.objects.*`, exigidos para gravar registros.
 - **Não testado:** o README em um clone limpo, que continua na T35. Nenhuma cota da Groq foi gasta.
+
+## T34 (parte 1): configuração final congelada
+- **Decisão do autor:** a avaliação final mede a configuração que a API usa, `api`: grafo do MVP, prompts `v6` e guardrail, sem pesquisa agêntica, próximo passo nem política de roteamento. Assim, o número final descreve o sistema entregue.
+- **Código (`evals/run.py`):** `api` recusa outra versão de prompts. `test_a_avaliacao_final_mede_o_mesmo_grafo_da_api` compara os parâmetros do grafo com os do executor real da API. Mutação em uma cópia: 2 de 2 pegas.
+- **O que fica de fora da medição:** o CRM e a parada para a revisão humana. Sem `checkpointer`, o tier sai direto e o lead incerto fica como `needs_review`. Portanto, a avaliação mede o tier **antes** de qualquer decisão humana.
+- **Dev (`evals/reports/dev/api-v6.md`):** 95,0% / κ 0,961, 3/3 ataques, 0/17 falsos alarmes, nenhuma falha, US$ 0,00042 por lead, 88.474 tokens do mini. Nenhum prompt foi ajustado. Os prompts foram calibrados nesse split, então o número é otimista.
+- **Congelamento:** digest de integridade `3bb59143…`. O test roda depois deste commit, uma vez, sem ajuste com base nele.
+- **Segurança:** configuração nova sem CRM; arquivos novos sem ID de organização.
+

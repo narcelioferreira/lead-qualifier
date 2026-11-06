@@ -25,6 +25,7 @@ from app.graph.nodes.extraction import Extraction
 from app.graph.nodes.mvp import MvpDeps, RunBudget
 from app.schemas import LeadInput, ReviewDecision, Tier
 from app.security.guardrail import GuardrailVerdict
+from evals import run
 from tests.api.test_api import API_KEY
 from tests.graph.test_crm import FakeCrm
 from tests.graph.test_guardrail import INJECTION, SPAM
@@ -305,3 +306,42 @@ def test_falta_de_qualquer_prompt_do_guardrail_impede_a_subida(
     monkeypatch.setattr(production, "load_prompt", load)
     with pytest.raises(RuntimeError, match="use v6"):
         production.check_guardrail(_settings())
+
+
+async def test_a_avaliacao_final_mede_o_mesmo_grafo_da_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    settings = _settings(api_write_crm=False)
+
+    @asynccontextmanager
+    async def spy(_settings: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        calls.append(kwargs)
+
+        class Graph:
+            async def ainvoke(self, *_args: Any) -> dict[str, Any]:
+                return {}
+
+            async def aget_state(self, *_args: Any) -> Any:
+                return type("State", (), {"interrupts": ()})()
+
+        yield Graph(), None
+
+    monkeypatch.setattr(production, "production_graph", spy)
+    monkeypatch.setattr(runtime, "production_graph", spy)
+    monkeypatch.setattr(run, "get_settings", lambda: settings)
+    await production.graph_executor(settings, None)(uuid.uuid4(), LeadInput.model_validate(LEAD))
+    async with run.CONFIGS["api"](settings.api_prompt_version):
+        pass
+    api, evaluation = calls
+    assert api.pop("checkpointer") is None  # a parada para a revisão é o que não dá para medir
+    assert evaluation.pop("write_crm", False) is api.pop("write_crm") is False
+    assert evaluation == api
+    assert evaluation["guardrail"] is True and evaluation["prompt_version"] == "v6"
+
+
+async def test_a_avaliacao_final_recusa_outra_versao_de_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(run, "get_settings", _settings)
+    with pytest.raises(ValueError, match="v6"):
+        async with run.CONFIGS["api"]("v5"):
+            pass  # pragma: no cover

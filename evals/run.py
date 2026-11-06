@@ -114,6 +114,24 @@ def _large_only(prompt_version: str) -> AbstractAsyncContextManager[Graph]:
 
 
 @asynccontextmanager
+async def _api(prompt_version: str) -> AsyncIterator[Graph]:
+    """Configuração final (T34): o que a API roda, grafo do MVP + guardrail, prompts `v6`.
+
+    Fica de fora só o que não dá para medir aqui: o CRM e a parada para a revisão humana (sem
+    `checkpointer`, o tier sai direto, e o lead incerto fica com o status `needs_review`).
+    """
+    from app.graph.runtime import production_graph
+
+    settings = get_settings()
+    if prompt_version != settings.api_prompt_version:
+        raise ValueError(f"a configuração `api` usa os prompts {settings.api_prompt_version}")
+    async with production_graph(
+        settings, prompt_version=prompt_version, guardrail=settings.api_guardrail
+    ) as (graph, _audit):
+        yield graph
+
+
+@asynccontextmanager
 async def _baseline(prompt_version: str) -> AsyncIterator[Graph]:
     from app.graph.runtime import baseline_graph
 
@@ -128,6 +146,7 @@ CONFIGS: dict[str, GraphFactory] = {
     "rag": _rag,
     "routing": _routing,
     "large_only": _large_only,
+    "api": _api,
 }
 # Status sem tier que valem uma nova tentativa (`--retry-failed`). Rejeição não: é determinística.
 RETRYABLE = frozenset({"failed", "error"})
