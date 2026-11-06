@@ -109,15 +109,20 @@ def size_band(employees: int) -> SizeBand:
     return SizeBand.S_1000_PLUS
 
 
-def to_profile(extraction: Extraction) -> LeadProfile:
-    """Fatos + classificações → `LeadProfile`, com as regras de mapeamento do doc 02."""
+def to_profile(extraction: Extraction, *, cnae_confirmed: bool = True) -> LeadProfile:
+    """Fatos + classificações → `LeadProfile`, com as regras de mapeamento do doc 02.
+
+    `cnae_confirmed=False`: o CNAE só aparece no que o próprio lead escreveu. Ele ainda classifica
+    o setor, mas como declaração, com certeza média em vez de alta.
+    """
     certainty: dict[Criterion, Certainty] = {Criterion.BUYING_ROLE: extraction.role_certainty}
 
     sector = extraction.sector
     sector_certainty = extraction.sector_certainty
     if cnae_digits(extraction.cnae):
         # CNAE é a fonte da "verdade" de setor. O nó só o mantém se ele aparecer nas evidências.
-        sector, sector_certainty = _sectors().classify(extraction.cnae or ""), Certainty.HIGH
+        sector = _sectors().classify(extraction.cnae or "")
+        sector_certainty = Certainty.HIGH if cnae_confirmed else Certainty.MEDIUM
     certainty[Criterion.SECTOR] = sector_certainty
 
     if extraction.based_in_brazil is False:

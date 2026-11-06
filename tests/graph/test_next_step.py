@@ -10,7 +10,7 @@ from app.graph.builder import MERMAID_RAG_PATH, GraphNodes, build_graph, to_merm
 from app.graph.nodes import stubs
 from app.graph.nodes.crm import next_step_text
 from app.graph.nodes.extraction import Assessment, Extraction
-from app.graph.nodes.mvp import MvpDeps, RunBudget, make_nodes
+from app.graph.nodes.mvp import ECHO_REASON, MvpDeps, RunBudget, make_nodes
 from app.graph.nodes.next_step import (
     DISQUALIFIED_ACTIONS,
     DISQUALIFIED_QUERY,
@@ -368,6 +368,19 @@ async def test_output_is_sanitized() -> None:
     step = state["next_step"]
     assert "<b>" not in step.action and "evil" not in step.action
     assert step.talking_points == ["Veja [link removido]"]
+
+
+async def test_step_copying_the_system_prompt_uses_the_default() -> None:
+    kb = ScriptedKB({DocType.PLAYBOOK: [PLAYBOOK_HIT]})
+    llm = llm_with(DRAFT)
+    await run(deps(llm, kb))
+    system = next(m.content for m in llm.calls[NextStepDraft][0] if m.role == "system")
+    copied = " ".join(system.split()[:20])
+    leaked = DRAFT.model_copy(update={"action": copied, "kb_citations": ["playbook-tier-a"]})
+    state = await run(deps(llm_with(leaked), kb))
+    assert copied not in state["next_step"].action
+    assert state["next_step"].action == default_action(state["score"])
+    assert f"suggest_next_step: {ECHO_REASON}" in state["errors"]
 
 
 async def test_owner_and_sla_cannot_be_changed_by_the_llm() -> None:

@@ -13,7 +13,7 @@ from tenacity import wait_none
 from evals.dataset import load_dataset
 from tools_mcp.base import MemoryCache, ToolRequestError, ToolUnavailableError, cache_key
 from tools_mcp.search import MAX_QUERY_CHARS, MAX_SNIPPET_CHARS, TAVILY_URL, TavilySearch
-from tools_mcp.site import MAX_HTML_BYTES, MAX_PAGE_CHARS, SiteFetcher
+from tools_mcp.site import MAX_HTML_BYTES, MAX_PAGE_CHARS, SiteFetcher, _find_about_link
 
 pytestmark = pytest.mark.anyio
 
@@ -255,7 +255,9 @@ async def test_site_follows_public_redirect() -> None:
         "http://127.0.0.1/admin",
         "http://[::1]/",
         "http://10.0.0.5/",
-        "https://interno.com.br:8443/",  # porta fora de 80/443
+        "http://novodominio.com.br/",  # público, mas rebaixa a conexão para http
+        "https://interno.com.br:8443/",  # porta fora de 443
+        "https://interno.com.br:80/",
         "file:///etc/passwd",
         "https://user:senha@outro.com.br/",  # pragma: allowlist secret
     ],
@@ -283,6 +285,14 @@ async def test_site_rejects_invalid_domains() -> None:
     for domain in ["localhost", "169.254.169.254", "intranet.local", "x"]:
         with pytest.raises(ToolRequestError):
             await _fetcher().fetch(domain)
+
+
+def test_about_link_in_http_is_ignored() -> None:
+    html = (
+        f'<a href="http://{DOMAIN}/sobre">Sobre</a>'
+        f'<a href="https://{DOMAIN}/quem-somos">Quem somos</a>'
+    )
+    assert _find_about_link(html, HOME, DOMAIN) == f"https://{DOMAIN}/quem-somos"
 
 
 @respx.mock

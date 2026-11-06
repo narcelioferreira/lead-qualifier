@@ -1,8 +1,8 @@
 """`fetch_company_site`: home e página "sobre" da empresa, extraídas com trafilatura.
 
 **SSRF:** o domínio vem do lead. Além da validação do `LeadInput`, cada requisição (e cada
-salto de redirect) só segue se o host resolver exclusivamente para IPs públicos, na porta
-80/443. Risco residual: DNS rebinding entre a checagem e a conexão; a mitigação completa
+salto de redirect) só segue em `https`, na porta 443, e se o host resolver exclusivamente para
+IPs públicos. Risco residual: DNS rebinding entre a checagem e a conexão; a mitigação completa
 (conectar no IP checado) fica para o container isolado de tools (T19/T20).
 
 O conteúdo dos sites é **não confiável**: sai sanitizado e truncado, e o prompt que o consome
@@ -175,7 +175,7 @@ class SiteFetcher:
 
     async def _check_public(self, url: str) -> None:
         parts = urlsplit(url)
-        if parts.scheme not in {"http", "https"}:
+        if parts.scheme != "https":  # sem http: nem um redirect rebaixa a conexão
             raise _FetchError(f"esquema não permitido ({parts.scheme})")
         if parts.username or parts.password:
             raise _FetchError("URL com credenciais")
@@ -183,7 +183,7 @@ class SiteFetcher:
             port = parts.port
         except ValueError:
             raise _FetchError("porta inválida") from None
-        if port not in {None, 80, 443}:
+        if port not in {None, 443}:
             raise _FetchError(f"porta não permitida ({port})")
         host = parts.hostname or ""
         try:
@@ -237,7 +237,7 @@ def _find_about_link(html: str, base_url: str, host: str) -> str | None:
             continue
         url = urljoin(base_url, href)
         target = urlsplit(url).hostname or ""
-        if urlsplit(url).scheme in {"http", "https"} and (
+        if urlsplit(url).scheme == "https" and (
             target in allowed or any(target.endswith(f".{h}") for h in allowed)
         ):
             return url.split("#", 1)[0]

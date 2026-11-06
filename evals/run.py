@@ -43,6 +43,8 @@ RUNS_DIR = DATASET_PATH.parent / "runs"
 REPORTS_DIR = DATASET_PATH.parent / "reports"
 # Pausa entre leads: o plano gratuito da Groq tem 8K tokens/min e o MVP gasta ~4,5K por lead.
 DEFAULT_PAUSE_S = 20.0
+# Teto de um lead (T33): travou, vira erro registrado e o runner segue.
+DEFAULT_LEAD_TIMEOUT_S = 600.0
 MAX_ERRORS = 5
 MAX_ERROR_CHARS = 300
 
@@ -228,6 +230,7 @@ async def run_eval(
     pause_s: float = DEFAULT_PAUSE_S,
     retry_failed: bool = False,
     max_consecutive_failures: int = DEFAULT_MAX_CONSECUTIVE_FAILURES,
+    lead_timeout_s: float = DEFAULT_LEAD_TIMEOUT_S,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     log: Callable[[str], None] = print,
 ) -> list[PredictionRow]:
@@ -252,7 +255,8 @@ async def run_eval(
         raw = item.to_lead_input().model_dump(mode="json")  # só o lead: nada de metadados
         start = time.perf_counter()
         try:
-            state = await graph.ainvoke({"run_id": run_id, "raw_input": raw})
+            async with asyncio.timeout(lead_timeout_s):
+                state = await graph.ainvoke({"run_id": run_id, "raw_input": raw})
         except Exception as exc:  # o runner registra e segue para o próximo lead
             state = {"status": "error", "errors": [f"{type(exc).__name__}: {exc}"]}
         latency = round((time.perf_counter() - start) * 1000)

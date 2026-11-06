@@ -4,8 +4,9 @@ Garantias:
 - a execução é criada como `running` **antes** do 202, então o `GET` já a encontra;
 - fila limitada (ASI08): no máximo `max_pending` execuções aceitas e não terminadas, e
   `max_concurrent` rodando ao mesmo tempo (plano gratuito da Groq). Fila cheia → `QueueFullError`;
-- uma execução nunca fica `running` para sempre: exceção, cancelamento ou falha ao gravar o
-  resultado viram `failed`, com mensagem genérica (o detalhe não sai da API);
+- uma execução nunca fica `running` para sempre: exceção, cancelamento, estouro do tempo limite
+  (`run_timeout`, contado depois de sair da fila) ou falha ao gravar o resultado viram `failed`,
+  com mensagem genérica (o detalhe não sai da API);
 - a retomada de uma revisão humana (T31) passa pela mesma fila e pelos mesmos limites; a
   decisão é reservada no banco antes do 202 (`claim_review`), então vale uma vez só.
 """
@@ -22,6 +23,7 @@ from app.audit.repository import ReviewClaim, RunSummary, RunView
 from app.schemas import LeadInput, ReviewDecision
 
 logger = logging.getLogger(__name__)
+TIMEOUT_MESSAGE = "execução cortada pelo tempo limite"
 
 
 class RunStore(Protocol):
@@ -76,6 +78,7 @@ class RunQueue:
         prompt_version: str,
         max_concurrent: int = 1,
         max_pending: int = 10,
+        run_timeout: float = 600.0,
     ) -> None:
         self._store = store
         self._executor = executor
@@ -83,6 +86,7 @@ class RunQueue:
         self._prompt_version = prompt_version
         self._slots = asyncio.Semaphore(max_concurrent)
         self._max_pending = max_pending
+        self._run_timeout = run_timeout
         self._tasks: set[asyncio.Task[None]] = set()
         self._starting = 0  # reservas feitas antes do `await start_run` (evita corrida)
 
@@ -135,10 +139,15 @@ class RunQueue:
         started = time.monotonic()
         try:
             async with self._slots:
-                await job()
+                async with asyncio.timeout(self._run_timeout):
+                    await job()
         except asyncio.CancelledError:
             await self._fail(run_id, "execução interrompida (API encerrada)", started)
             raise
+        except TimeoutError:
+            logger.warning("execução %s cortada pelo tempo limite", run_id)
+            await self._fail(run_id, TIMEOUT_MESSAGE, started)
+            return
         except Exception as exc:
             logger.exception("execução %s falhou", run_id)
             await self._fail(run_id, f"falha interna ({type(exc).__name__})", started)

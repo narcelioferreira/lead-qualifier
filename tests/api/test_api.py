@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from app.api import main as api_main
 from app.api.main import HealthCheck, Services, create_app
-from app.api.runner import Executor, RunQueue
+from app.api.runner import TIMEOUT_MESSAGE, Executor, RunQueue
 from app.audit.memory import MemoryAuditRepository
 from app.config import Settings
 from app.graph.builder import build_graph
@@ -303,6 +303,30 @@ async def test_excecao_no_grafo_vira_failed_sem_detalhe_interno() -> None:
         run = await _poll(client, f"/v1/runs/{run_id}", lambda b: b["status"] != "running")
     assert run["status"] == "failed"
     assert run["errors"] == ["falha interna (RuntimeError)"]
+
+
+async def test_execucao_travada_e_cortada_pelo_tempo_limite() -> None:
+    _, stuck = gate()  # nunca libera
+    store = MemoryStore()
+    queue = RunQueue(store, stuck, prompt_version="v2", run_timeout=0.01)
+    run_id = await queue.submit(LeadInput.model_validate(LEAD))
+    await asyncio.gather(*queue._tasks)
+    assert store.runs[run_id]["status"] == "failed"
+    assert store.runs[run_id]["errors"] == [TIMEOUT_MESSAGE]
+    assert queue.pending == 0
+
+
+async def test_tempo_na_fila_nao_conta_para_o_limite() -> None:
+    async def slow(run_id: uuid.UUID, lead: LeadInput) -> None:
+        await asyncio.sleep(0.3)
+
+    store = MemoryStore()
+    queue = RunQueue(store, slow, prompt_version="v2", run_timeout=0.5)  # 2 x 0,3 s, uma por vez
+    lead = LeadInput.model_validate(LEAD)
+    await queue.submit(lead)
+    second = await queue.submit(lead)
+    await asyncio.gather(*queue._tasks)
+    assert TIMEOUT_MESSAGE not in store.runs[second]["errors"]
 
 
 async def test_grafo_que_nao_grava_o_resultado_nao_fica_running() -> None:

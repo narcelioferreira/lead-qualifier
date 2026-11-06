@@ -1,7 +1,9 @@
 """Clientes de LLM com HTTP mockado (respx). Nenhuma chamada real."""
 
 import json
+import re
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -12,10 +14,12 @@ from tenacity import wait_none
 
 from app.llm.base import (
     MAX_RETRY_AFTER,
+    LLMError,
     LLMOutputError,
     LLMRequestError,
     LLMUnavailableError,
     Message,
+    send_with_retry,
     strict_json_schema,
 )
 from app.llm.groq_client import GROQ_BASE_URL, GroqClient
@@ -376,3 +380,34 @@ async def test_ollama_embed_rejects_chat_model_and_bad_batch() -> None:
         await _ollama().embed(catalog.get("ollama-slm"), ["a"])
     with pytest.raises(LLMRequestError, match="textos por chamada"):
         await _ollama().embed(catalog.get("ollama-embedding"), [])
+
+
+ORG_ID = "org_01abcdefghijklmnopqrstuvwx"  # pragma: allowlist secret
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [400, 429])
+async def test_error_message_does_not_carry_the_organization_id(status: int) -> None:
+    message = f"Rate limit reached in organization `{ORG_ID}` service tier `on_demand`"
+    respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(status, json={"error": {"message": message}})
+    )
+    with pytest.raises(LLMError) as caught:
+        await _groq().structured(_mini(), MESSAGES, Extraction)
+    assert ORG_ID not in str(caught.value)
+
+
+async def test_schema_failure_message_does_not_carry_the_organization_id() -> None:
+    async def send() -> httpx.Response:
+        return httpx.Response(
+            400, json={"error": {"code": "json_validate_failed", "message": f"Falha {ORG_ID}"}}
+        )
+
+    with pytest.raises(LLMOutputError) as caught:
+        await send_with_retry(send, "groq")
+    assert ORG_ID not in str(caught.value)
+
+
+def test_no_organization_id_in_versioned_runs() -> None:
+    for path in Path("evals/runs").glob("*.jsonl"):
+        assert not re.search(r"org_[0-9a-z]{20,}", path.read_text(encoding="utf-8")), path

@@ -45,10 +45,10 @@ def test_set_is_valid_balanced_and_free_of_personal_data() -> None:
 
 
 def test_synthetic_attacks_get_past_the_rules_and_legit_cases_are_not_flagged() -> None:
-    """O conjunto mede o que as regras não pegam: nenhum ataque sintético casa com elas."""
+    """O conjunto mede o que as regras não pegam. G011 e G014 viraram regra na T33."""
     for case in synthetic():
         hits = scan(f"{case.company_name}\n{case.contact_role}\n{case.message}")
-        assert not hits, (case.id, hits)
+        assert bool(hits) is (case.id in {"G011", "G014"}), (case.id, hits)
 
 
 def test_cases_add_the_dev_split_and_never_the_test_split() -> None:

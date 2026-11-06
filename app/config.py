@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     api_max_concurrent_runs: int = Field(default=1, ge=1, le=4)
     api_max_pending_runs: int = Field(default=10, ge=1, le=100)
     api_max_body_bytes: int = Field(default=32_768, ge=1024, le=1_048_576)
+    # Teto de uma execução, depois de sair da fila (T33). Fica acima do `RunBudget` (300 s), que só
+    # é conferido entre as chamadas: este corta também o que travou no meio de uma delas.
+    api_run_timeout_seconds: int = Field(default=600, ge=30, le=3600)
     # Revisão humana (T31): lead com a regra de incerteza para e espera `POST .../review`.
     api_human_review: bool = True
     # MCP `lead-qualifier` em /mcp (T32): `Host` aceitos (proteção contra DNS rebinding).

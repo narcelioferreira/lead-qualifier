@@ -75,7 +75,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - 🔄 T35 em andamento (parte 1): os 7 ADRs em `docs/adr/`.
 - 🔄 T33 (parte 2): correções da auditoria de 05/11. Registro existente no HubSpot só recebe `ai_*`, regra K1 não grava no CRM, e-mail fora do domínio não associa, revisão humana em fail closed e NUL fora da auditoria. 1.050 testes.
 - 🔄 T33 (parte 3): guardrail ligado na API (`API_GUARDRAIL`, prompts `v6`, fail closed na subida), com ataques na montagem real da API (`tests/security/test_api_config.py`). Falta rebuild e teste real. `.agents/` e `skills-lock.json` no `.gitignore`.
-- ⏭️ **Próximo passo:** o resto da T33 (ver "Cuidados para as fases finais"). Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
+- 🔄 T33 (parte 4): 9 lacunas fechadas (nenhum `xfail`), filtro de saída, `https` só, timeout global (`API_RUN_TIMEOUT_SECONDS`), revisão de segredos, ID da organização da Groq fora da árvore e das mensagens de erro. Reais: G011/G014 no mini, guardrail na API (11 leads) e HubSpot.
+- ⏭️ **Próximo passo:** `/security-review` (o autor pede), depois a T34 como configuração nova. Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
 
 ## Cuidados para as fases finais
 Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/auditoria-seguranca-2026-11-05/RELATORIO.md`, fora do repositório: não o copie para cá.
@@ -97,12 +98,10 @@ Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/au
 
 **Passo 1: T30 concluída em 05/11.** Ver `evals/reports/04-routing.md`.
 
-**Passo 2: terminar a T33**
-1. Essas correções mudam o comportamento em avaliação: as 9 lacunas em `xfail`, `https` só em `tools_mcp/site.py:178,240` e o filtro de e-mail, telefone e host sem esquema em `app/security/output.py`.
-2. Prompt publicado é imutável. Prompt novo vira `v7`, com `scripts/lock_config.py`. Tire o `xfail` de cada lacuna corrigida.
-3. Guardrail ligado na API (parte 3). A combinação grafo do MVP + `v6` ainda não tem medição própria: não atribua a ela os números das outras configurações.
-4. Filtro do próximo passo é pré-requisito antes de `next_step=True` na API.
-5. Falta do plano: ataques reais ao mini (G011, G014, gastam cota), timeout global por lead e revisão de segredos e permissões. Rode `/security-review` de novo no fim.
+**Passo 2: T33 concluída em 06/11, exceto o `/security-review`, que o autor pede depois.** Ver parte 4 no `CHANGELOG.md`.
+1. O comportamento em avaliação mudou: a T34 é configuração nova, sem aproveitar as rodadas antigas.
+2. Filtro do próximo passo pronto, mas os limites estão nos riscos residuais de `06-seguranca-agentes.md`: reavalie antes de `next_step=True` na API.
+3. O ID da organização da Groq ainda está em commits antigos: a decisão de reescrever é do autor.
 
 **Passo 3: T34 (exige a Groq; uma única rodada)**
 1. Congele a configuração antes. Se o passo 2 mudou o comportamento, ela é uma configuração nova, com rodada própria no test.

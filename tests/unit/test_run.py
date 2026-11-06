@@ -1,5 +1,6 @@
 """Runner da avaliação com um grafo falso (sem rede, sem LLM)."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -160,3 +161,24 @@ async def test_consecutive_failures_stop_the_run(tmp_path: Path) -> None:
                           max_consecutive_failures=3, log=logs.append)  # fmt: skip
     assert len(rows) == 3  # para depois de 3 falhas seguidas, sem gastar os outros 5
     assert "--retry-failed" in logs[-1]
+
+
+async def test_lead_travado_vira_erro_e_o_runner_segue(tmp_path: Path) -> None:
+    class StuckOnFirst(FakeGraph):
+        async def ainvoke(self, input: dict[str, Any], /) -> dict[str, Any]:
+            if not self.inputs:
+                self.inputs.append(input)
+                await asyncio.Event().wait()
+            return await super().ainvoke(input)
+
+    rows = await run_eval(
+        ITEMS[:2],
+        StuckOnFirst(),
+        tmp_path / "preds.jsonl",
+        config="fake",
+        pause_s=0,
+        lead_timeout_s=0.01,
+        log=lambda _: None,
+    )
+    assert rows[0].status == "error" and "TimeoutError" in rows[0].errors[0]
+    assert rows[1].tier is Tier.A

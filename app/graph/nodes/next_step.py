@@ -35,7 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.audit.repository import StepRecord
 from app.graph.builder import GraphNodes, Node
-from app.graph.nodes.mvp import KnowledgeBase, MvpDeps, _ask, _lead_text
+from app.graph.nodes.mvp import ECHO_REASON, KnowledgeBase, MvpDeps, _ask, _lead_text
 from app.graph.state import QualificationState
 from app.knowledge_base import DocType
 from app.llm.base import Message
@@ -44,7 +44,7 @@ from app.ontology.scoring import ScoreResult
 from app.prompts import new_nonce, untrusted
 from app.schemas import LeadInput, NextStep, Tier
 from app.security.injection import scan
-from app.security.output import sanitize_rationale
+from app.security.output import echoes_prompt, sanitize_rationale
 from tools_mcp.base import ToolError
 from tools_mcp.kb import KBFilters, KBHit
 
@@ -370,6 +370,13 @@ def make_suggest_next_step(deps: MvpDeps) -> Node:
                     default_next_step(score, hits),
                     "LLM sem resposta válida: passo padrão",
                 )
+            elif echoes_prompt(
+                "\n".join([result.parsed.action, *result.parsed.talking_points]),
+                [messages[0].content],
+            ):
+                step, reason = default_next_step(score, hits), ECHO_REASON
+                llm_steps.append(StepRecord.from_llm(NODE, result))
+                errors.append(f"{NODE}: {ECHO_REASON}")
             else:
                 context = [classification, profile_json, lead_text]
                 step, notes = compose(result.parsed, score, hits, context)

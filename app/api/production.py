@@ -62,7 +62,11 @@ def graph_executor(
         ) as (graph, _audit):
             config = thread_config(str(run_id))
             payload: GraphInput = {"run_id": str(run_id), "raw_input": lead.model_dump(mode="json")}
-            await graph.ainvoke(payload, config)
+            try:
+                await graph.ainvoke(payload, config)
+            except BaseException:
+                await _forget_failed(checkpointer, run_id)
+                raise
             await _settle(graph, checkpointer, run_id)
 
     return execute
@@ -82,7 +86,11 @@ def graph_resumer(settings: Settings, checkpointer: BaseCheckpointSaver[str]) ->
             config = thread_config(str(run_id))
             if not (await graph.aget_state(config)).interrupts:
                 raise NoPendingReviewError(f"execução {run_id} sem revisão pendente no checkpoint")
-            await graph.ainvoke(Command(resume=decision.model_dump(mode="json")), config)
+            try:
+                await graph.ainvoke(Command(resume=decision.model_dump(mode="json")), config)
+            except BaseException:
+                await _forget_failed(checkpointer, run_id)
+                raise
             await _settle(graph, checkpointer, run_id)
 
     return resume
@@ -97,6 +105,17 @@ async def _settle(
     config = thread_config(str(run_id))
     if not (await graph.aget_state(config)).interrupts:
         await forget(checkpointer, str(run_id))
+
+
+async def _forget_failed(checkpointer: BaseCheckpointSaver[str] | None, run_id: uuid.UUID) -> None:
+    """Execução que falhou ou estourou o tempo vira `failed`, sem retomada: o state (com dados
+    pessoais) não fica no banco. Uma falha aqui não pode esconder o erro original."""
+    if checkpointer is None:
+        return
+    try:
+        await forget(checkpointer, str(run_id))
+    except Exception:
+        logger.exception("não foi possível apagar o checkpoint da execução %s", run_id)
 
 
 def check_guardrail(settings: Settings) -> None:
@@ -158,6 +177,7 @@ async def production_services(settings: Settings) -> AsyncIterator[Services]:
                 prompt_version=settings.api_prompt_version,
                 max_concurrent=settings.api_max_concurrent_runs,
                 max_pending=settings.api_max_pending_runs,
+                run_timeout=settings.api_run_timeout_seconds,
             )
             yield Services(store=store, queue=queue, checks=health_checks(settings, engine))
     finally:

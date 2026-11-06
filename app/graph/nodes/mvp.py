@@ -44,7 +44,7 @@ from app.routing.cost import ModelSpec, get_catalog
 from app.routing.policy import RoutingPolicy, decisions_from_steps
 from app.schemas import Evidence, EvidenceSource, LeadInput, QualificationResult, Tier
 from app.security.injection import InjectionHit, scan_sources
-from app.security.output import sanitize_rationale
+from app.security.output import echoes_prompt, sanitize_rationale
 from tools_mcp.base import ToolError
 from tools_mcp.kb import DEFAULT_K, KBFilters, KBSearchResult
 from tools_mcp.search import SearchResult
@@ -53,6 +53,8 @@ from tools_mcp.site import SiteContent
 MAX_SEARCH_RESULTS = 3
 SEARCH_SNIPPET_CHARS = 500  # orçamento de tokens: o plano gratuito da Groq tem 8K tokens/min
 SITE_SNIPPET_CHARS = 1000
+ECHO_RATIONALE = "Justificativa descartada: o texto repetia as instruções internas; ver auditoria."
+ECHO_REASON = "saída repetia o system prompt: texto descartado"
 RETRY_NOTICE = (
     "Sua resposta anterior não seguiu o formato pedido. Responda somente com o JSON no schema."
 )
@@ -309,17 +311,21 @@ def initial_query(lead: LeadInput) -> str:
 
 def _read_extraction(
     extraction: Extraction,
-    texts: Sequence[str],
+    lead_text: str,
     evidence: Sequence[Evidence],
     ids: Sequence[str],
 ) -> tuple[LeadProfile, list[str], list[str]]:
     """Extração do LLM → (perfil, evidências citadas que existem, URLs delas)."""
     cited = [i for i in extraction.evidence_ids if i in ids]  # descarta ids inventados
-    if extraction.cnae and not cnae_in_evidence(extraction.cnae, texts):
+    independent = [e.snippet for e in evidence if e.source_type is not EvidenceSource.LEAD_MESSAGE]
+    confirmed = cnae_in_evidence(extraction.cnae, independent)
+    declared = cnae_in_evidence(extraction.cnae, [lead_text, *(e.snippet for e in evidence)])
+    if extraction.cnae and not (confirmed or declared):
         # CNAE que não está em nenhuma evidência é alucinação: não pode decidir o setor.
         extraction = extraction.model_copy(update={"cnae": None})
     urls = [evidence[ids.index(i)].source_url for i in cited]
-    return to_profile(extraction), cited, [str(u) for u in urls if u is not None]
+    profile = to_profile(extraction, cnae_confirmed=confirmed)
+    return profile, cited, [str(u) for u in urls if u is not None]
 
 
 def make_nodes(deps: MvpDeps) -> GraphNodes:
@@ -373,8 +379,8 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
         result, steps, errors = await _ask(deps, state, "normalize", messages, Extraction)
         if result is None:
             return {"status": "failed", "errors": errors, "steps": steps}
-        texts = [_lead_text(state["lead"]), *(e.snippet for e in evidence)]
-        profile, cited, sources = _read_extraction(result.parsed, texts, evidence, ids)
+        lead_text = _lead_text(state["lead"])
+        profile, cited, sources = _read_extraction(result.parsed, lead_text, evidence, ids)
         steps.append(StepRecord.from_llm("normalize", result, sources=sources))
 
         decision = (
@@ -395,7 +401,7 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
             steps += more
             errors += failed
             if larger is not None:
-                profile, cited, sources = _read_extraction(larger.parsed, texts, evidence, ids)
+                profile, cited, sources = _read_extraction(larger.parsed, lead_text, evidence, ids)
                 steps.append(StepRecord.from_llm("normalize", larger, sources=sources))
         return {
             "prompt_version": deps.prompt_version,
@@ -440,8 +446,20 @@ def make_nodes(deps: MvpDeps) -> GraphNodes:
                 "errors": errors,
                 "steps": steps,
             }
+        if echoes_prompt(result.parsed.rationale, [messages[0].content]):
+            return {
+                "rationale": ECHO_RATIONALE,
+                "steps": [
+                    *steps,
+                    StepRecord.from_llm("assess", result),
+                    StepRecord(node="assess", route_reason=ECHO_REASON),
+                ],
+                "errors": [*errors, f"assess: {ECHO_REASON}"],
+            }
+        lead_domain = state["lead"].company_domain
+        allowed = [*_evidence_urls(evidence), *([lead_domain] if lead_domain else [])]
         return {
-            "rationale": sanitize_rationale(result.parsed.rationale, _evidence_urls(evidence)),
+            "rationale": sanitize_rationale(result.parsed.rationale, allowed),
             "steps": [*steps, StepRecord.from_llm("assess", result)],
             "errors": errors,  # falha do modelo principal, quando a reserva respondeu (T29)
         }

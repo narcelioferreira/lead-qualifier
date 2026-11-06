@@ -5,6 +5,7 @@ livre do LLM nunca chega ao grafo sem passar por esse schema.
 """
 
 import copy
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -22,6 +23,8 @@ from app.routing.cost import ModelSpec, Usage
 DEFAULT_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 # Código de erro da Groq quando a saída gerada não bate com o schema.
 _SCHEMA_FAILURE = "json_validate_failed"
+_ORG_ID = re.compile(r"\borg_[0-9a-z]+", re.IGNORECASE)
+REMOVED_ORG_ID = "org_[removido]"
 
 
 class Message(BaseModel):
@@ -66,6 +69,11 @@ class LLMOutputError(LLMError):
     """Resposta fora do schema, recusa ou resposta incompleta."""
 
 
+def _without_org_id(message: str) -> str:
+    """O 429 da Groq cita a organização; a mensagem vai para `errors`, a API e `evals/runs/`."""
+    return _ORG_ID.sub(REMOVED_ORG_ID, message)
+
+
 async def send_with_retry(
     send: Callable[[], Awaitable[httpx.Response]],
     provider: str,
@@ -76,11 +84,12 @@ async def send_with_retry(
     try:
         return await retry.send_with_retry(send, provider, wait, sleep)
     except retry.UpstreamUnavailableError as exc:
-        raise LLMUnavailableError(str(exc)) from exc
+        raise LLMUnavailableError(_without_org_id(str(exc))) from exc
     except retry.UpstreamRequestError as exc:
         if _SCHEMA_FAILURE in exc.detail:
-            raise LLMOutputError(f"{provider}: saída fora do schema ({exc.detail})") from exc
-        raise LLMRequestError(str(exc)) from exc
+            detail = _without_org_id(exc.detail)
+            raise LLMOutputError(f"{provider}: saída fora do schema ({detail})") from exc
+        raise LLMRequestError(_without_org_id(str(exc))) from exc
 
 
 def strict_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
