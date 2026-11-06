@@ -163,3 +163,14 @@ def test_report_reads_the_saved_runs(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(bench, "REPORT_PATH", tmp_path / "padrao.md")
     assert bench.main(["report", "m"]) == 0
     assert (tmp_path / "padrao.md").exists()  # o relatório versionado não é sobrescrito
+
+
+def test_versioned_report_matches_the_saved_runs(tmp_path: Path) -> None:
+    def body(text: str) -> list[str]:
+        return [line for line in text.splitlines() if not line.startswith("- **Gerado em:**")]
+
+    fresh = tmp_path / "report.md"
+    bench.report(bench.DEFAULT_MODELS, fresh)
+    assert body(bench.REPORT_PATH.read_text(encoding="utf-8")) == body(
+        fresh.read_text(encoding="utf-8")
+    )

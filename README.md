@@ -377,7 +377,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, se
 
 ## Qualidade
 
-- **1.149 testes** unitários, de grafo, de API e de ataques, sem rede, e **38 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`).
+- **1.150 testes** unitários, de grafo, de API e de ataques, sem rede, e **38 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`).
 - Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):
