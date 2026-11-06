@@ -76,7 +76,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - 🔄 T33 (parte 2): correções da auditoria de 05/11. Registro existente no HubSpot só recebe `ai_*`, regra K1 não grava no CRM, e-mail fora do domínio não associa, revisão humana em fail closed e NUL fora da auditoria. 1.050 testes.
 - 🔄 T33 (parte 3): guardrail ligado na API (`API_GUARDRAIL`, prompts `v6`, fail closed na subida), com ataques na montagem real da API (`tests/security/test_api_config.py`). Falta rebuild e teste real. `.agents/` e `skills-lock.json` no `.gitignore`.
 - 🔄 T33 (parte 4): 9 lacunas fechadas (nenhum `xfail`), filtro de saída, `https` só, timeout global (`API_RUN_TIMEOUT_SECONDS`), revisão de segredos, ID da organização da Groq fora da árvore e das mensagens de erro. Reais: G011/G014 no mini, guardrail na API (11 leads) e HubSpot.
-- ⏭️ **Próximo passo:** `/security-review` (o autor pede), depois a T34 como configuração nova. Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
+- ✅ T33 (parte 5): `/security-review` sem achado com confiança 8 ou mais, e README corrigido.
+- ⏭️ **Próximo passo:** a T34 como configuração nova. O `API_WRITE_CRM` segue `false` no `.env.example`. Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
 
 ## Cuidados para as fases finais
 Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/auditoria-seguranca-2026-11-05/RELATORIO.md`, fora do repositório: não o copie para cá.
@@ -98,10 +99,10 @@ Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/au
 
 **Passo 1: T30 concluída em 05/11.** Ver `evals/reports/04-routing.md`.
 
-**Passo 2: T33 concluída em 06/11, exceto o `/security-review`, que o autor pede depois.** Ver parte 4 no `CHANGELOG.md`.
+**Passo 2: T33 concluída em 06/11.** Ver partes 4 e 5 no `CHANGELOG.md`.
 1. O comportamento em avaliação mudou: a T34 é configuração nova, sem aproveitar as rodadas antigas.
 2. Filtro do próximo passo pronto, mas os limites estão nos riscos residuais de `06-seguranca-agentes.md`: reavalie antes de `next_step=True` na API.
-3. O ID da organização da Groq ainda está em commits antigos: a decisão de reescrever é do autor.
+3. O ID da organização da Groq fica nos commits antigos: o autor decidiu não reescrever o histórico.
 
 **Passo 3: T34 (exige a Groq; uma única rodada)**
 1. Congele a configuração antes. Se o passo 2 mudou o comportamento, ela é uma configuração nova, com rodada própria no test.
@@ -112,7 +113,7 @@ Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/au
 **Passo 4: T35 (sem a Groq)**
 1. Corrija o que a auditoria achou de impreciso: `README.md:231` e `tools_mcp/site.py:5-6` e a linha de DNS rebinding em `docs/06-seguranca-agentes.md`, que citam a T19.
 2. Recorte `docs/linkedin/t22-smoke.png` (record IDs e `usuário@hostname`) e `t22-docs-run.png` (favoritos e `run_id`). Confira a GIF, que não foi auditada por inteiro.
-3. Crie `evals/README.md` avisando que as empresas são reais e as mensagens, inventadas. A L012 é o caso mais sensível; trocá-la muda o dataset, então a decisão é do autor.
+3. Crie `evals/README.md` avisando que as empresas são reais e as mensagens, inventadas. A L012 fica no dataset como está (decisão do autor em 06/11).
 4. A skill (`.agents/`, `skills-lock.json`) fica fora do git, por decisão do autor.
 5. Teste o README em um clone limpo. O README menciona o Claude Code só como assistência.
 6. O `CLAUDE.md` será apagado aqui: confira antes se algo dele ainda precisa ir para a documentação.

@@ -975,3 +975,11 @@ Corrige as 9 lacunas em `xfail` e os filtros que esperavam o fim da T30. Nenhum 
 - **Mutação (em uma cópia):** 31 de 31 pegas. Três escaparam na primeira rodada (limiar do eco, domínio do lead e checkpoint na retomada) e ganharam teste.
 - **Falta na T33:** rodar `/security-review` de novo, a pedido do autor, depois.
 - **Segurança:** ASI01 (regras e saída), ASI02 (`https`), ASI08 (timeout) e dados pessoais (saída e checkpoint).
+
+## T33 (parte 5): revisão de segurança e README
+- **`/security-review` (`d256760..HEAD`):** nenhum achado com confiança 8 ou mais. Três candidatos caíram no filtro, porque exigem a `API_KEY` e não atravessam fronteira de confiança: sufixo público como domínio, gravação de `ai_*` com e-mail divergente e máscara de e-mail sensível a maiúsculas. Ficaram sem correção.
+- **README conferido contra o código, os relatórios, o CI e a demo offline.** Falsos corrigidos: nomes dos nós, "todos os containers" sem root, 100% de cobertura nos nós determinísticos, RAG como se estivesse na API e gravação no HubSpot ligada, quando o `.env.example` a desliga.
+- **Atualizados:** status até a T36, grafo da API, resultados de `rag`, `routing` e `large_only`, rota de revisão, MCP `lead-qualifier`, controles e riscos residuais, estrutura e contagem de testes. Faltavam a menção à FrotaSense como fictícia e o `scripts/setup_hubspot.py`.
+- **Decisões do autor:** `API_WRITE_CRM=false` no `.env.example`; L012 mantida; histórico sem reescrita.
+- **Achado, sem correção aqui:** `evals/reports/guardrail-bench.md` tem dados de teste (modelo `m`, 15/68) desde a T28. Os números do benchmark estão na ADR 0006 e no CHANGELOG.
+- **Não testado:** o README em um clone limpo, que continua na T35. Nenhuma cota da Groq foi gasta.
