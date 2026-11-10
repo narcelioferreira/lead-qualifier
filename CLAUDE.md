@@ -77,7 +77,8 @@ Inclui: Python 3.12, uv, LangGraph, Groq API (plano gratuito; substituiu a OpenA
 - 🔄 T33 (parte 3): guardrail ligado na API (`API_GUARDRAIL`, prompts `v6`, fail closed na subida), com ataques na montagem real da API (`tests/security/test_api_config.py`). Falta rebuild e teste real. `.agents/` e `skills-lock.json` no `.gitignore`.
 - 🔄 T33 (parte 4): 9 lacunas fechadas (nenhum `xfail`), filtro de saída, `https` só, timeout global (`API_RUN_TIMEOUT_SECONDS`), revisão de segredos, ID da organização da Groq fora da árvore e das mensagens de erro. Reais: G011/G014 no mini, guardrail na API (11 leads) e HubSpot.
 - ✅ T33 (parte 5): `/security-review` sem achado com confiança 8 ou mais, e README corrigido.
-- ⏭️ **Próximo passo:** a T34 como configuração nova. O `API_WRITE_CRM` segue `false` no `.env.example`. Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
+- ✅ T34: `api` (MVP + `v6` + guardrail) no test, rodada única: 60,0% / κ 0,610, 4/4 ataques, US$ 0,00043 por lead; dev 95,0%. `evals/reports/05-final.md` com a análise dos 12 erros. Gabarito não alterado.
+- ⏭️ **Próximo passo:** a T35. O `API_WRITE_CRM` segue `false` no `.env.example`. Commits sem `Co-Authored-By`, só com a identidade e a assinatura GPG do autor.
 
 ## Cuidados para as fases finais
 Siga esta ordem. O relatório da auditoria está em `/home/home/lead qualifer/auditoria-seguranca-2026-11-05/RELATORIO.md`, fora do repositório: não o copie para cá.

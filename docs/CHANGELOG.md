@@ -993,3 +993,18 @@ Corrige as 9 lacunas em `xfail` e os filtros que esperavam o fim da T30. Nenhum 
 - **Congelamento:** digest de integridade `3bb59143…`. O test roda depois deste commit, uma vez, sem ajuste com base nele.
 - **Segurança:** configuração nova sem CRM; arquivos novos sem ID de organização.
 
+
+## T34 (parte 2): rodada única no test e análise de erros
+- **Rodada:** a configuração `api` congelada rodou uma vez no test (30 leads), em duas partes (06/11 e 10/11), retomada com `--resume` no mesmo arquivo, sem refazer nenhum lead. O digest de integridade `3bb59143…` foi o mesmo nos 30, e nada mudou em `app/` nem em `evals/run.py` entre as partes. Nada foi gravado no HubSpot.
+- **Resultado (`evals/reports/05-final.md`):** 60,0% (IC 43–77%) / κ 0,610, 4/4 ataques desqualificados (3 pela regra, sem LLM), 0/26 falsos alarmes, nenhuma falha, US$ 0,00043 por lead, 135.209 tokens, todos do mini. No dev, a mesma configuração fez 95,0%. Contra o `mvp`: 0,0 p.p. (McNemar p = 1,0). Contra a `routing`: −10,0 p.p. (p = 0,25).
+- **Análise de erros (12 leads), sem ajuste:**
+  - porte não encontrado, sem o teto C1 (L009, L010, L014: B → A);
+  - evidência que o gabarito não usou (L003 região, L023 e L044 porte), os três marcados como incertos no gabarito;
+  - setor escolhido pelo LLM sem CNAE (L013, L049). **Achado:** só 2 dos 26 leads extraídos tiveram CNAE nas evidências, os dois fictícios; nas empresas reais, o setor sempre veio do LLM;
+  - regra eliminatória dependente do LLM (L022 sem K5, L025 com K2 para uma locadora de frota);
+  - mapeamento de cargo (L048, "Gerente Administrativo" como influenciador);
+  - perfil igual à justificativa do gabarito, tier diferente (L016).
+- **Sinais:** 4 dos 12 erros tiveram sinal na execução (1 pediu revisão, 3 na fronteira); entre os 18 acertos, só 1 na fronteira. Proposta registrada: mandar a fronteira para a revisão, medindo antes no dev.
+- **Reprodução:** retomar o arquivo completo gerou o mesmo relatório, sem nenhum passo novo em `agent_steps` e com o SHA-256 das previsões inalterado.
+- **Gabarito:** não alterado. Os casos L003, L016, L023 e L044 ficam para conferência do autor; qualquer revisão depois do test precisa ser registrada como tal, e o número oficial continua 60,0%.
+- **README:** linha `api` na tabela de resultados, T34 concluída, SSRF com a ressalva do DNS rebinding, diagramas e contagem de testes (1.152) corrigidos.

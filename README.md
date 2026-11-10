@@ -50,7 +50,7 @@ Esse desenho já se mostrou útil na prática. Numa execução real da T14, um l
 | H. Humano no loop e hardening | T31: revisão humana com `interrupt()` e checkpoint no Postgres | ✅ |
 | | T32: servidor MCP `lead-qualifier` (o agente inteiro como tool) | ✅ |
 | | T33: suíte de ataques, timeout global e revisão de segurança | ✅ |
-| I. Resultado final | T34: avaliação final | ⏳ |
+| I. Resultado final | T34: avaliação final da configuração da API e análise de erros | ✅ |
 | | T35: documentação final | 🔄 |
 | | T36: posts no LinkedIn | ⏳ |
 
@@ -92,7 +92,7 @@ flowchart LR
 | `write_to_crm` | ferramentas (MCP) | Grava empresa (pelo domínio), contato (pelo e-mail), associação e a Note com a justificativa por critério no HubSpot. Idempotente por `run_id`; falha no CRM vira erro na auditoria, sem perder o resultado. Registro existente só recebe `ai_*`, a regra K1 não grava nada e e-mail fora do domínio da empresa não associa (a Note avisa) |
 | `audit_log` | código | Grava a execução completa (entrada com o e-mail mascarado, passos, tokens, custo, latência e resultado) em `agent_runs` e `agent_steps` |
 
-O diagrama acima é o da API. Os diagramas gerados do próprio código, com um teste que falha se ficarem desatualizados, são outras montagens: [`docs/grafo.mmd`](docs/grafo.mmd) é o básico, e [`docs/grafo-guardrail.mmd`](docs/grafo-guardrail.mmd) e [`docs/grafo-revisao.mmd`](docs/grafo-revisao.mmd) incluem também o próximo passo, que não está na API.
+O diagrama acima é o da API. Os diagramas gerados do próprio código, com um teste que falha se ficarem desatualizados, são outras montagens: [`docs/grafo.mmd`](docs/grafo.mmd) é o básico, e [`docs/grafo-guardrail.mmd`](docs/grafo-guardrail.mmd) e [`docs/grafo-revisao.mmd`](docs/grafo-revisao.mmd) incluem também a pesquisa agêntica e o próximo passo, que não estão na API.
 
 **Pesquisa agêntica (T25, fora da API):** com `agentic=True`, o `research` vira `agentic_research`, um loop ([`docs/grafo-agentico.mmd`](docs/grafo-agentico.mmd)). A cada iteração, o mini diz quais fatos ainda faltam (setor, porte, região) e propõe uma nova consulta. **O código decide** se o loop continua: no máximo 3 iterações (conferidas também pelo roteador), um teto de tokens para a pesquisa, consulta validada (sem links, e-mails, tags nem repetição) e, com injeção detectada, o planejador nem é chamado. O site só é lido no domínio declarado pelo lead.
 
@@ -217,16 +217,17 @@ A documentação OpenAPI fica em `http://127.0.0.1:8000/docs`, desligada quando 
 | `rag`: + pesquisa agêntica e próximo passo | 66,7% (50–83%) | 0,662 | 3/4 | US$ 0,00076 |
 | `routing`: + guardrail e roteamento | **70,0% (53–87%)** | **0,733** | **4/4** | US$ 0,00097 |
 | `large_only`: o mesmo grafo, só no modelo maior | 66,7% (50–83%) | 0,681 | 4/4 | US$ 0,00276 |
+| `api`: **a configuração entregue** (MVP + prompts `v6` + guardrail) | 60,0% (43–77%) | 0,610 | 4/4 | US$ 0,00043 |
 
 O custo é **equivalente**, pelo preço de lista: as rodadas usaram o plano gratuito da Groq.
 
 - **Com 30 leads, a ordem entre as configurações não é conclusiva:** os intervalos se sobrepõem, e `rag` × `mvp` deu McNemar p = 0,69. Os ataques são só 4 e mostram o comportamento nesses casos, sem estimar uma taxa. No baseline, duas injeções receberam tier A.
 - **O ganho mais claro do roteamento é o custo:** a `routing` custou 35% da `large_only`, com 92,9% dos tokens no mini e o mesmo tier em 27 de 30 leads (McNemar p = 1,0).
 - **O ajuste de prompt não generalizou por inteiro:** no dev, o `mvp` chegou a 95%; no test, ficou em 60%. Nenhum ajuste foi feito com base no test.
-- **Esses números não valem para a API**, que usa o grafo do MVP com os prompts `v6` e o guardrail. Essa combinação ainda não tem medição própria. A configuração final terá rodada própria na T34.
+- **A configuração da API foi medida na T34**, com rodada única no test depois de congelada: 60,0% / κ 0,610, 4/4 ataques desqualificados (3 pela regra, sem LLM) e nenhum lead legítimo barrado (0/26). No dev, onde os prompts foram calibrados, ela fez 95,0%. O erro mais comum é B → A (5 de 9 leads B), e a análise de cada divergência está em [`05-final.md`](evals/reports/05-final.md). As outras linhas não valem para a API, que não usa a pesquisa agêntica, o próximo passo nem o roteamento.
 - Análise de erros e decisões no [CHANGELOG](docs/CHANGELOG.md).
 
-Os relatórios ficam em [`evals/reports/`](evals/reports/): [`01-baseline.md`](evals/reports/01-baseline.md), [`02-mvp.md`](evals/reports/02-mvp.md), [`03-rag.md`](evals/reports/03-rag.md), [`04-routing.md`](evals/reports/04-routing.md) e as rodadas do dev em [`dev/`](evals/reports/dev/).
+Os relatórios ficam em [`evals/reports/`](evals/reports/): [`01-baseline.md`](evals/reports/01-baseline.md), [`02-mvp.md`](evals/reports/02-mvp.md), [`03-rag.md`](evals/reports/03-rag.md), [`04-routing.md`](evals/reports/04-routing.md), [`05-final.md`](evals/reports/05-final.md) e as rodadas do dev em [`dev/`](evals/reports/dev/).
 
 **Auditoria de tokens (T16): runner × painel da Groq**
 
@@ -254,7 +255,7 @@ O modelo de ameaças completo, o mapeamento AST, os testes por controle e os ris
 | Risco (OWASP) | Controles implementados |
 |---|---|
 | **ASI01 · Goal Hijack** (prompt injection) · AST05 | Conteúdo não confiável em blocos `<dados_{nonce}>` com nonce aleatório por chamada. **Detector determinístico** na mensagem, no cargo e no site da empresa: com um padrão conhecido, o texto **nem chega ao LLM** e o lead é desqualificado (K1). **Guardrail de entrada** ligado na API: o mini pergunta se o texto fala com o avaliador ou é spam (no benchmark da [ADR 0006](docs/adr/0006-guardrail.md), 22/24 injeções e 0/32 legítimos bloqueados). Saída só com enums, e **o score é calculado em código** |
-| **ASI02 · Tool Misuse** · AST03, AST06 | **SSRF** bloqueado em cada requisição e redirect (só `https`, porta 443 e IP público, sem credenciais, até 5 MB). Tools do HubSpot com allowlist de propriedades, IDs validados, sem delete e anotações honestas (leitura × escrita). O servidor **recusa argumentos fora do schema** antes de executar, e o cliente valida a resposta |
+| **ASI02 · Tool Misuse** · AST03, AST06 | **SSRF** checado em cada requisição e redirect (só `https`, porta 443 e IP público, sem credenciais, até 5 MB); o DNS rebinding entre a checagem e a conexão continua como risco residual. Tools do HubSpot com allowlist de propriedades, IDs validados, sem delete e anotações honestas (leitura × escrita). O servidor **recusa argumentos fora do schema** antes de executar, e o cliente valida a resposta |
 | **ASI03 · Identity & Privilege** | Segredos em `SecretStr`; token do CI só de leitura; Postgres, Ollama e MCP só em `127.0.0.1`. **Chaves da Tavily e do HubSpot isoladas no container de tools**, que exige Bearer token; chave de serviço do HubSpot com escopos mínimos. `X-API-Key` na API, comparada em tempo constante |
 | **ASI04 · Supply Chain** · AST02, AST07 | `uv.lock` com hashes, pip-audit, bandit e detect-secrets. **Actions fixadas por SHA**, **imagens por digest** e Dependabot. **Prompts e configuração com SHA-256** (`integrity.lock.json`): versão publicada é imutável e o agente **recusa iniciar** se algo divergir |
 | **ASI05 · Code Execution** · AST04 | Nenhuma ferramenta executa código; a saída do LLM é só JSON validado; YAML com `safe_load` |
@@ -377,7 +378,7 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, se
 
 ## Qualidade
 
-- **1.150 testes** unitários, de grafo, de API e de ataques, sem rede, e **38 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`).
+- **1.152 testes** unitários, de grafo, de API e de ataques, sem rede, e **38 testes de integração** contra serviços reais. Cobertura de ~94%, com 100% na regra de negócio (`scoring.py`).
 - Os testes das proteções foram validados por mutação: com cada proteção desligada de propósito, os testes falham (SSRF: 12 de 13; detector de injeção: 23; orçamento por execução: 3 de 3).
 
 **Problemas que os testes e as integrações reais pegaram** (todos documentados no CHANGELOG):
