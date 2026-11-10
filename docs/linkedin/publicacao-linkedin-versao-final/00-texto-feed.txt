@@ -1,0 +1,37 @@
+No dev, meu agente de qualificação de leads acertava 95%. No teste congelado, 60%.
+
+Vou publicar os dois e explicar por que o segundo é o que importa.
+
+No primeiro post, apresentei o projeto: um agente em LangGraph que pesquisa a empresa, classifica o lead pelo perfil de cliente ideal, justifica com evidência e grava no HubSpot via MCP. Agora ele está fechado, e os números chegaram.
+
+Como medi:
+• 50 leads de empresas reais, com mensagens inventadas, rotulados à mão antes de o agente existir
+• 20 leads para ajustar, 30 de teste congelados, uma rodada por configuração
+
+O princípio: o LLM extrai fatos; o código pontua. Num baseline em que o LLM decidia o tier, duas injeções de prompt pedindo "tier A" receberam A. Com o score em código, nenhuma conseguiu.
+
+O que aprendi testando camadas:
+→ O roteamento de modelos custou 35% do modelo maior, com o mesmo tier em 27 de 30 leads
+→ Nenhum modelo local de 1B a 4B serviu de guardrail em CPU; o gpt-oss-20b pegou 22 de 24 injeções sem bloquear nenhum lead legítimo
+→ O erro mais comum (B virando A) apareceu também com o modelo caro
+
+A configuração entregue, no teste:
+• 60,0% de acurácia (IC 95%: 43% a 77%), kappa 0,610
+• 4 de 4 ataques barrados, 3 antes de qualquer chamada ao LLM
+• 0 de 26 leads legítimos bloqueados
+• US$ 0,43 a cada mil leads (custo equivalente)
+
+Abri os 12 erros um por um. O achado que mais me surpreendeu: o código só fixa o setor quando acha o CNAE, e nas empresas reais isso não aconteceu nenhuma vez. O setor sempre veio do LLM. A regra existia, mas quase nunca era acionada.
+
+Cinco lições:
+1. Monte a régua antes do agente
+2. Aceite o número do teste
+3. Tire do LLM a decisão que precisa ser auditável
+4. Modelo maior não conserta evidência ruim
+5. Publique o intervalo de confiança
+
+O artigo completo, com os 12 erros e a engenharia em volta do modelo, está no link. O código e os relatórios estão no GitHub.
+
+Como vocês medem agentes em produção?
+
+#IA #LLM #AgentesDeIA #LangGraph #MLOps #Python

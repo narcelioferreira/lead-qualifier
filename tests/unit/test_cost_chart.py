@@ -2,6 +2,7 @@
 
 import shutil
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,22 @@ def test_svg_is_valid_has_both_panels_labels_and_tooltips() -> None:
     assert "prefers-color-scheme: dark" in svg
     labels = {t.text: t for t in root.iter(f"{ns}text") if t.get("class") == "label"}
     assert labels["large_only"].get("text-anchor") == "end"
-    assert abs(float(labels["rag"].get("y", 0)) - float(labels["routing"].get("y", 0))) >= 15
+    boxes = [
+        cost_chart._label_box(
+            float(t.get("x", 0)), float(t.get("y", 0)), t.text or "", t.get("text-anchor", "start")
+        )
+        for t in labels.values()
+    ]
+    assert not any(  # rag e routing estão colados: os rótulos não podem se cobrir
+        cost_chart._overlaps(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1 :]
+    )
+
+
+def test_labels_avoid_dots_and_the_highlight_chooses_first() -> None:
+    items = [(100.0, 100.0, "mvp", False), (115.0, 100.0, "api (entregue)", True)]
+    placed = {text: (x, anchor) for x, _, text, anchor in cost_chart._place_labels(items, 400)}
+    assert placed["api (entregue)"] == (125.0, "start")  # destaque fica à direita
+    assert placed["mvp"] == (90.0, "end")  # à direita cobriria o ponto da api
 
 
 def test_scales_are_log_on_cost_and_clamped() -> None:
@@ -81,3 +97,21 @@ def test_main_writes_the_svg(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     assert cost_chart.main(["--svg", str(out)]) == 0
     assert out.read_text(encoding="utf-8").startswith("<svg")
     assert "| Configuração | Split |" in capsys.readouterr().out
+
+
+def test_delivered_config_is_highlighted_with_its_own_class_and_label() -> None:
+    final = point("api", "test", 4.3e-4, 0.6)
+    svg = cost_chart.render_svg([point("mvp", "test", 3.6e-4, 0.6), replace(final, highlight=True)])
+    root = ET.fromstring(svg)  # noqa: S314 - XML gerado pelo próprio código, não por terceiros
+    ns = "{http://www.w3.org/2000/svg}"
+    labels = {
+        t.text: t.get("class") for t in root.iter(f"{ns}text") if "label" in (t.get("class") or "")
+    }
+    assert labels == {"mvp": "label", "api (entregue)": "label final"}
+    dots = [c.get("class") for c in root.iter(f"{ns}circle") if c.get("class")]
+    assert sorted(dots) == ["dot", "dot final"]
+
+
+def test_default_configs_include_the_delivered_api_config() -> None:
+    api = [c for c in cost_chart.CONFIGS if c.highlight]
+    assert [(c.name, c.dev, c.test) for c in api] == [("api", "api-v6-dev", "api-v6-test")]

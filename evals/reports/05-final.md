@@ -17,6 +17,8 @@
 
 O custo é **equivalente**, calculado pelo preço de lista: as rodadas usaram o plano gratuito da Groq. Todos os tokens foram do `groq-mini` (135.209 no test): 27 checagens do guardrail (os 3 leads barrados pela regra não chamam modelo), 26 extrações e 26 justificativas. O SLM de reserva do guardrail não foi acionado.
 
+![Custo × acurácia por configuração, com a configuração entregue em destaque](05-final-custo-acuracia.svg)
+
 ### Matriz de confusão no test (linhas = gabarito, colunas = agente)
 
 | | A | B | C | D |
