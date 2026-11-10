@@ -2,8 +2,9 @@
 
 **SSRF:** o domínio vem do lead. Além da validação do `LeadInput`, cada requisição (e cada
 salto de redirect) só segue em `https`, na porta 443, e se o host resolver exclusivamente para
-IPs públicos. Risco residual: DNS rebinding entre a checagem e a conexão; a mitigação completa
-(conectar no IP checado) fica para o container isolado de tools (T19/T20).
+IPs públicos. Risco residual: DNS rebinding entre a checagem e a conexão. Só `https` reduz o
+risco (o IP trocado precisaria de um certificado válido para o domínio), mas conectar no IP
+checado não foi feito (ver `docs/06-seguranca-agentes.md`, riscos residuais).
 
 O conteúdo dos sites é **não confiável**: sai sanitizado e truncado, e o prompt que o consome
 deve delimitá-lo. Domínios `.example` (empresas fictícias) são servidos pelas fixtures da

@@ -51,7 +51,7 @@ Esse desenho já se mostrou útil na prática. Numa execução real da T14, um l
 | | T32: servidor MCP `lead-qualifier` (o agente inteiro como tool) | ✅ |
 | | T33: suíte de ataques, timeout global e revisão de segurança | ✅ |
 | I. Resultado final | T34: avaliação final da configuração da API e análise de erros | ✅ |
-| | T35: documentação final | 🔄 |
+| | T35: documentação final | ✅ |
 | | T36: posts no LinkedIn | ⏳ |
 
 O plano completo, com os 36 passos e seus critérios de aceite, está em [`docs/04-plano-de-tasks.md`](docs/04-plano-de-tasks.md).
@@ -148,6 +148,8 @@ O MCP Inspector v2 não conecta a este servidor, e isso é esperado: ele roda no
 
 ## Demo sem clonar
 
+![Demo offline no terminal: 401 sem chave, 422 quando o cliente tenta mandar o tier e o resultado de 5 leads](docs/linkedin/t22-demo-offline.gif)
+
 O workflow **[Demo offline](https://github.com/narcelioferreira/lead-qualifier/actions/workflows/demo.yml)** roda a API e o grafo de verdade no GitHub Actions, sem secrets e sem rede, e publica o resultado no *Job Summary*: o tier de cada lead ao lado do rótulo humano, os critérios, a justificativa, o 401 sem chave e o 422 quando o cliente tenta mandar o próprio tier. **[Última execução](https://github.com/narcelioferreira/lead-qualifier/actions/runs/40022574667)** (16 s, concordância de 4/5 com o rótulo humano). As respostas da Groq, da Tavily e dos sites de 5 leads do split dev foram gravadas uma vez (`evals/demo/cassette.json`, com e-mails removidos) e são reproduzidas na demo. A rubrica, as regras, o detector de injeção e o saneamento rodam a cada execução, e um audit hook do Python bloqueia qualquer conexão fora do loopback.
 
 ```bash
@@ -227,6 +229,13 @@ O custo é **equivalente**, pelo preço de lista: as rodadas usaram o plano grat
 - **A configuração da API foi medida na T34**, com rodada única no test depois de congelada: 60,0% / κ 0,610, 4/4 ataques desqualificados (3 pela regra, sem LLM) e nenhum lead legítimo barrado (0/26). No dev, onde os prompts foram calibrados, ela fez 95,0%. O erro mais comum é B → A (5 de 9 leads B), e a análise de cada divergência está em [`05-final.md`](evals/reports/05-final.md). As outras linhas não valem para a API, que não usa a pesquisa agêntica, o próximo passo nem o roteamento.
 - Análise de erros e decisões no [CHANGELOG](docs/CHANGELOG.md).
 
+**Limitações da avaliação:**
+- **Amostra pequena:** 30 leads no test, com intervalos de confiança largos (cada lead vale 3,3 pontos percentuais) e só 4 ataques.
+- **Anotador único:** sem um segundo rotulador, não há kappa humano de referência. Metade dos erros da configuração final está em leads que o próprio gabarito marca como incertos.
+- **Setor sem CNAE:** nas empresas reais do test, o CNAE não apareceu nas evidências, e o setor veio da classificação do LLM. O código só fixa o setor quando acha o CNAE ([`05-final.md`](evals/reports/05-final.md)).
+- **Evidência variável:** a busca e os sites são reais. Outra execução pode trazer outra evidência e outro tier.
+- **Plano gratuito:** latência e limites da Groq não representam produção. O custo é o equivalente pelo preço de lista.
+
 Os relatórios ficam em [`evals/reports/`](evals/reports/): [`01-baseline.md`](evals/reports/01-baseline.md), [`02-mvp.md`](evals/reports/02-mvp.md), [`03-rag.md`](evals/reports/03-rag.md), [`04-routing.md`](evals/reports/04-routing.md), [`05-final.md`](evals/reports/05-final.md) e as rodadas do dev em [`dev/`](evals/reports/dev/).
 
 **Auditoria de tokens (T16): runner × painel da Groq**
@@ -275,7 +284,7 @@ O modelo de ameaças completo, o mapeamento AST, os testes por controle e os ris
 - um lead forjado com o domínio de um cliente real ainda troca as propriedades `ai_*` e acrescenta uma Note nesse registro. Por isso a API exige chave, só escuta em loopback e **não deve ser ligada a um formulário público** sem antes confirmar a posse do e-mail e impedir a sobrescrita sem revisão;
 - CNAE que só o lead declarou tem certeza média, mas ainda soma os pontos do setor;
 - o filtro de saída não cobre tudo (CPF, telefone fixo sem DDD, 0800, domínio com acento);
-- DNS rebinding entre a checagem de IP e a conexão;
+- DNS rebinding entre a checagem de IP e a conexão, reduzido pelo `https` obrigatório (o IP trocado precisaria de um certificado válido para o domínio);
 - a mensagem do lead é processada por um provedor externo (Groq).
 
 Os detalhes estão no documento 06.
@@ -404,5 +413,5 @@ docs/                     arquitetura, negócio, ontologia, contratos, plano, se
 | [ADRs](docs/adr/README.md) | As 7 decisões de arquitetura, com contexto, consequências e alternativas |
 | [CHANGELOG](docs/CHANGELOG.md) | O que foi feito em cada task, decisões e problemas corrigidos |
 
-> **Sobre o dataset:** as empresas são reais e públicas; cargos, mensagens e e-mails são inventados. As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (gpt-oss, via Groq), para evitar o viés de o modelo avaliar o próprio texto.
+> **Sobre o dataset:** as empresas são reais e públicas; cargos, mensagens e e-mails são inventados (ver [`evals/README.md`](evals/README.md)). As mensagens foram escritas com apoio do Claude (Anthropic), um modelo diferente dos usados pelo agente (gpt-oss, via Groq), para evitar o viés de o modelo avaliar o próprio texto.
 

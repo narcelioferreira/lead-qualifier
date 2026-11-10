@@ -6,9 +6,9 @@
 - Para provar que a demo é mesmo offline, um *audit hook* do Python bloqueia qualquer conexão fora da própria máquina. Se algum código tentar sair para a internet, a demo quebra.
 - A demo não esconde erro: num dos 5 leads o agente discordou do rótulo humano (B → C), e o relatório mostra isso.
 - 📸 [`t22-demo-offline.gif`](t22-demo-offline.gif): a demo offline no terminal (`uv run python -m evals.demo`), com as linhas reais da saída: 401 sem chave, 422 quando o cliente tenta mandar o tier, os 5 leads e a concordância de 4/5.
-- 📸 [`t22-job-summary.png`](t22-job-summary.png): o Job Summary da demo, renderizado a partir do mesmo Markdown que o workflow grava no `$GITHUB_STEP_SUMMARY` (execução local de `python -m evals.demo --summary`, com a mesma fita do Actions). Não é um print da página do Actions: o repositório é privado, e a página só abre com login.
+- 📸 [`t22-job-summary.png`](t22-job-summary.png): o Job Summary da demo, renderizado a partir do mesmo Markdown que o workflow grava no `$GITHUB_STEP_SUMMARY` (execução local de `python -m evals.demo --summary`, com a mesma fita do Actions). Não é um print da página do Actions, que hoje é pública: o link está no fim desta lista.
 - 📸 Sistema completo em Docker, em prints do autor (no lugar do GIF: o Swagger mostra a `X-API-Key` no `curl` ao executar, e o vídeo gravado não pode ser publicado):
-  - [`t22-smoke.png`](t22-smoke.png): `scripts/smoke_e2e.sh` de ponta a ponta (401 sem chave, L024 tier A, registro conferido no HubSpot);
+  - [`t22-smoke.png`](t22-smoke.png): `scripts/smoke_e2e.sh` de ponta a ponta (401 sem chave, L024 tier A, registro conferido no HubSpot). Recortado na T35: sem `usuário@hostname`, com o `run_id` e os IDs do HubSpot cobertos por blocos sólidos;
   - [`t22-hubspot-note.png`](t22-hubspot-note.png): a empresa Gobor no HubSpot com a Note da qualificação (tier, critérios e justificativa);
-  - [`t22-docs-run.png`](t22-docs-run.png): `GET /v1/runs/{run_id}` no `/docs`, com a linha da chave coberta por um retângulo sólido.
+  - [`t22-docs-run.png`](t22-docs-run.png): `GET /v1/runs/{run_id}` no `/docs`, com a linha da chave coberta por um retângulo sólido. Recortado na T35: sem a barra de favoritos, com o `run_id` coberto por blocos sólidos.
 - Execução da demo no Actions (16 s, sem secrets): https://github.com/narcelioferreira/lead-qualifier/actions/runs/40022574667

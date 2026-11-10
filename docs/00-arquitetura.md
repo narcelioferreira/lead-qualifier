@@ -200,7 +200,7 @@ Autenticação por header `X-API-Key`. Documentação OpenAPI automática.
 - Guardrail de entrada (regras + mini, T28) antes da pesquisa e da extração: lead com injeção ou spam não gera busca na web nem chamada de extração.
 - Pesquisa limitada a dados públicos da **empresa**: sem scraping de LinkedIn e sem enriquecimento de dados pessoais. A mensagem do lead vai à Groq (o e-mail, não); manter o texto só no SLM local foi avaliado na T28 e descartado, porque nenhum SLM de 1B a 4B atingiu a meta do guardrail em CPU.
 - Segredos em `.env`, nunca versionados. Containers com usuário não-root.
-- **SSRF na busca de sites:** cada requisição e cada redirect só seguem em `https`, na porta 443, se o host resolver apenas para IPs públicos (sem credenciais, até 5 MB de HTML). Risco residual: DNS rebinding entre a checagem e a conexão, a mitigar no container isolado de tools.
+- **SSRF na busca de sites:** cada requisição e cada redirect só seguem em `https`, na porta 443, se o host resolver apenas para IPs públicos (sem credenciais, até 5 MB de HTML). Risco residual: DNS rebinding entre a checagem e a conexão, reduzido pelo `https` obrigatório (o IP trocado precisaria de um certificado válido para o domínio). Conectar no IP checado não foi feito.
 
 ---
 
