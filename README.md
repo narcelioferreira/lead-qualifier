@@ -4,6 +4,12 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.2-purple)
 
+### 🎬 Demonstração (4 min)
+
+[![Assista à demonstração do Lead Qualifier](docs/assets/demo-thumbnail.png)](lead-qualifier-demo-4min.mp4)
+
+*Clique na imagem para assistir ao vídeo. O vídeo foi gerado pelo script [`video.py`](video.py).*
+
 Agente em **LangGraph** que qualifica leads B2B para a **FrotaSense**, um SaaS **fictício** de gestão de frotas. Para cada lead, o agente:
 1. pesquisa dados públicos da empresa (site oficial e busca na web);
 2. classifica a aderência ao perfil de cliente ideal (ICP) com uma **ontologia** e uma **rubrica determinística**;
