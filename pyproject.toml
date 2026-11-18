@@ -54,6 +54,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]  # acentos/caracteres PT-BR em strings e
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]  # assert é esperado em testes
+"video.py" = ["S110", "S603", "S607", "N806", "E731", "B007", "E501"]  # script avulso que gera o vídeo de demo
 
 [tool.mypy]
 python_version = "3.12"
